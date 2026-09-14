@@ -25,8 +25,9 @@ end-to-end.
     happened installing Kubernetes on these VMs
   - [docs/my-lab/gitea-setup.md](docs/my-lab/gitea-setup.md) — Gitea's actual
     address, credentials location, and the registry consolidation done
-- `apps/java-app/` — sample Java app used as the end-to-end deployment target
-  (coming soon)
+- [apps/java-app/](apps/java-app/) — `hello-camel-service`: Java 17 + Spring
+  Boot 4 + Apache Camel 4 REST API (`/api/hello`, `/api/version`), the
+  end-to-end deployment target for the pipeline below
 
 ## Topology
 
