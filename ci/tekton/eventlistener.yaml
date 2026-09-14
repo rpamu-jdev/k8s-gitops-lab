@@ -1,0 +1,33 @@
+# Listens for Gitea's push webhook, filters to pushes on main only, and
+# fires the TriggerTemplate. NOTE: this lab does not verify the webhook's
+# HMAC signature (X-Gitea-Signature) - Tekton Triggers has no built-in
+# Gitea signature interceptor (only github/gitlab/bitbucket/slack), and
+# implementing HMAC verification via a raw CEL expression was judged not
+# worth the complexity for a webhook reachable only from the private lab
+# network. Filtering is by event type + branch only. See
+# docs/tekton-setup.md for the trade-off written out.
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: gitea-webhook
+  namespace: default
+spec:
+  serviceAccountName: el-webhook
+  triggers:
+    - name: gitea-push-main
+      interceptors:
+        - ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: >
+                header.match('X-Gitea-Event', 'push') &&
+                body.ref == 'refs/heads/main'
+            - name: "overlays"
+              value:
+                - key: short_sha
+                  expression: "body.after.truncate(7)"
+      bindings:
+        - ref: gitea-push-binding
+      template:
+        ref: hello-camel-service-trigger-template

@@ -3,12 +3,15 @@
 Concrete record of getting the sample app from source to a browser-reachable
 URL in the cluster.
 
-## Build & push (manual, via Kaniko — Tekton not set up yet)
+## Build & push (original manual version, since automated by Tekton)
 
-Since there's no CI pipeline yet, the image is built and pushed manually
-using **Kaniko** run directly via `nerdctl` on `k8s-node` — chosen
-specifically because it's the same tool a future Tekton pipeline will use,
-so this doubles as a dry run:
+Before Tekton was set up (see [tekton-setup.md](tekton-setup.md)), the
+image was built and pushed manually using **Kaniko** run directly via
+`nerdctl` on `k8s-node` — chosen specifically because it's the same tool
+the eventual Tekton pipeline uses, so this doubled as a dry run. Kept here
+as a record of the manual process and the real bug found along the way;
+day-to-day builds now go through the pipeline instead
+(`kubectl create -f ci/tekton/pipelinerun.yaml`).
 
 ```bash
 # docker config.json with Gitea registry auth, built from the admin token:
@@ -72,7 +75,7 @@ Traefik (installed as a standard part of cluster setup — see
 deployed.
 
 Rather than give this app its own hostname, it's routed off a **shared
-host used across all apps in this lab, `api.staging.io`**, distinguished by
+host used across all apps in this lab, `api.staging.test`**, distinguished by
 path — this app owns the `/sample` prefix.
 
 **Two approaches were tried:**
@@ -103,7 +106,7 @@ path — this app owns the `/sample` prefix.
      entryPoints:
        - web
      routes:
-       - match: Host(`api.staging.io`) && PathPrefix(`/sample`)
+       - match: Host(`api.staging.test`) && PathPrefix(`/sample`)
          kind: Rule
          services:
            - name: hello-camel-service
@@ -117,29 +120,39 @@ path — this app owns the `/sample` prefix.
 
 ## Verified working end-to-end
 
+At the time, Traefik was still `NodePort`-exposed (see
+[k8s-setup.md](k8s-setup.md) for the later switch to `hostNetwork`), so
+both nodes were checked to confirm `NodePort` really does listen
+cluster-wide:
+
 ```bash
-curl -H "Host: api.staging.io" http://10.137.160.147:32185/sample/api/hello
-curl -H "Host: api.staging.io" http://10.137.160.148:32185/sample/api/hello
+curl -H "Host: api.staging.test" http://10.137.160.147:32185/sample/api/hello
+curl -H "Host: api.staging.test" http://10.137.160.148:32185/sample/api/hello
 ```
 
-Both nodes answered identically (NodePort listens cluster-wide, regardless
-of which node the ingress controller pod actually landed on). Response
-confirmed the `ConfigMap`-supplied env var took effect —
-`"environment": "k8s-lab"` (the ConfigMap's value), not `"local"` (the
-app's built-in default) — proving the whole env-var → ConfigMap → pod path
-works, not just that the pod started.
+Both nodes answered identically. Response confirmed the `ConfigMap`-
+supplied env var took effect — `"environment": "k8s-lab"` (the ConfigMap's
+value), not `"local"` (the app's built-in default) — proving the whole
+env-var → ConfigMap → pod path works, not just that the pod started.
 
 Also confirmed the scoping is real, not coincidental:
 
 ```bash
 # hitting /api/hello (the old, pre-BASE_PATH route) on the same host correctly 404s:
-curl -o /dev/null -w "%{http_code}\n" -H "Host: api.staging.io" http://10.137.160.147:32185/api/hello
+curl -o /dev/null -w "%{http_code}\n" -H "Host: api.staging.test" http://10.137.160.147:32185/api/hello
 # -> 404
 
 # route registered correctly via Traefik's own API:
 curl http://10.137.160.147:31831/api/http/routers | python3 -c "..."
 # -> default-hello-camel-service-api-staging-io-sample@kubernetes
-#    Host("api.staging.io") && PathPrefix("/sample")
+#    Host("api.staging.test") && PathPrefix("/sample")
+```
+
+**Re-verified after the `hostNetwork` switch**, port dropped entirely:
+
+```bash
+curl -H "Host: api.staging.test" http://10.137.160.148/sample/api/hello
+# -> 200, same response as before
 ```
 
 ## Status
@@ -149,10 +162,12 @@ curl http://10.137.160.147:31831/api/http/routers | python3 -c "..."
 - [x] Traefik installed and healthy
 - [x] Switched from Ingress+Middleware to native IngressRoute, app owns its
       full path via `BASE_PATH`
-- [x] Ingress-routed access verified from both nodes on `api.staging.io/sample`,
+- [x] Ingress-routed access verified from both nodes on `api.staging.test/sample`,
       env var config confirmed flowing through, route confirmed in
       Traefik's own API
-- [ ] `/etc/hosts` entry or real DNS for `api.staging.io` (currently
-      accessed via explicit `Host:` header only)
-- [ ] Automate build+push via Tekton (currently manual Kaniko run)
-- [ ] Automate deploy via Argo CD (currently manual `kubectl apply`)
+- [x] `/etc/hosts` entry added on the lab host for `api.staging.test`
+      (along with `tekton.`/`dashboard.` — see
+      [dashboards-setup.md](dashboards-setup.md)); browser access confirmed
+- [x] Build+push automated via Tekton — see [tekton-setup.md](tekton-setup.md)
+- [ ] Automate deploy via Argo CD (currently `kubectl set image` from the
+      Tekton `deploy` Task, not GitOps-reconciled)

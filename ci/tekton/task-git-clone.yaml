@@ -1,0 +1,26 @@
+# Minimal, self-written git-clone Task (rather than pulling one from Tekton
+# Hub) - keeps the pipeline self-contained and avoids a dependency on the
+# Hub resolver reaching out over the network during a build.
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: git-clone
+  namespace: default
+spec:
+  params:
+    - name: url
+      type: string
+    - name: revision
+      type: string
+      default: main
+  workspaces:
+    - name: source
+  steps:
+    - name: clone
+      image: alpine/git:2.45.2
+      script: |
+        #!/bin/sh
+        set -eu
+        rm -rf "$(workspaces.source.path)"/* "$(workspaces.source.path)"/.[!.]* 2>/dev/null || true
+        git clone --depth 1 --branch "$(params.revision)" "$(params.url)" "$(workspaces.source.path)"
+        cd "$(workspaces.source.path)" && git log -1 --oneline

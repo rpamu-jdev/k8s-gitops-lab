@@ -1,0 +1,35 @@
+# ServiceAccount the deploy Task's pod runs as, scoped to exactly what it
+# needs: patch/get on Deployments (for `kubectl set image` + `rollout
+# status`) in the default namespace, nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-deployer
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tekton-deployer
+  namespace: default
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-deployer
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: tekton-deployer
+    namespace: default
+roleRef:
+  kind: Role
+  name: tekton-deployer
+  apiGroup: rbac.authorization.k8s.io

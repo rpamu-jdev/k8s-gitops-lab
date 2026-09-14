@@ -1,0 +1,28 @@
+# Rolls the Deployment to the newly-built image and waits for the rollout
+# to finish. Runs as the tekton-deployer ServiceAccount (see
+# ci/tekton/rbac.yaml), scoped to just get/patch on Deployments in default.
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: deploy
+  namespace: default
+spec:
+  params:
+    - name: deployment
+      type: string
+    - name: container
+      type: string
+    - name: image
+      type: string
+    - name: namespace
+      type: string
+      default: default
+  steps:
+    - name: kubectl-set-image
+      image: bitnami/kubectl:latest
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        kubectl -n "$(params.namespace)" set image deployment/"$(params.deployment)" \
+          "$(params.container)=$(params.image)"
+        kubectl -n "$(params.namespace)" rollout status deployment/"$(params.deployment)" --timeout=180s

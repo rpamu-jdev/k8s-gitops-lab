@@ -126,7 +126,16 @@ in the `default` namespace — edit that namespace in the fetched
 `kube-system`, alongside the cluster's other infra components like
 Calico/CoreDNS/kube-proxy), and match it in the Deployment below.
 
-Deploy Traefik itself:
+Deploy Traefik itself. Two ways to expose it, pick based on whether you
+want a plain port number in every URL:
+
+**Option A — `hostNetwork` (no port number in URLs at all).** Traefik binds
+directly to port 80/443/8080 on whichever node it's scheduled to, so
+`http://<hostname>/` just works — no NodePort, nothing above 1024 to
+remember. The trade-off: with `hostNetwork`, the port is only bound on the
+**one node actually running the pod** (unlike a `NodePort` Service, which
+listens on every node) — so pin it to a specific node with `nodeSelector`
+and point DNS at that one node's IP consistently:
 
 ```yaml
 apiVersion: v1
@@ -153,6 +162,10 @@ spec:
         app: traefik
     spec:
       serviceAccountName: traefik-ingress-controller
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        kubernetes.io/hostname: <node-name>
       containers:
         - name: traefik
           image: traefik:v3.7.13
@@ -185,8 +198,8 @@ metadata:
   name: traefik
   namespace: kube-system
 spec:
-  type: NodePort
-  selector:
+  type: ClusterIP   # hostNetwork already exposes the pod externally;
+  selector:          # this Service is only for internal cluster access
     app: traefik
   ports:
     - name: web
@@ -207,26 +220,49 @@ spec:
   controller: traefik.io/ingress-controller
 ```
 
-`type: NodePort` (not `LoadBalancer`) since there's no cloud load balancer
-provisioner on a bare kubeadm cluster.
+**Option B — `NodePort`** (a port number, but reachable from *every* node,
+not just one): swap `hostNetwork`/`dnsPolicy`/`nodeSelector` out of the
+pod spec and set the Service's `type: NodePort` instead. Simpler if you
+don't mind a port number and want any node to work.
 
 ```bash
 kubectl apply -f traefik-deploy.yaml
 kubectl -n kube-system wait --for=condition=Ready pod -l app=traefik --timeout=120s
-kubectl -n kube-system get svc traefik   # note the NodePorts
+kubectl -n kube-system get pods -l app=traefik -o wide   # note which node it's on (hostNetwork) or...
+kubectl -n kube-system get svc traefik                   # ...note the NodePorts (NodePort option)
 ```
 
 ### Point a hostname at it
 
-Routing is host-header based. Either add `<any-node-ip> <your-hostname>` to
+**Pick a domain that's guaranteed to never resolve on the real internet** —
+use a TLD reserved for exactly this purpose, per
+[RFC 2606](https://www.rfc-editor.org/rfc/rfc2606): `.test`, `.example`,
+`.invalid`. Don't invent something like `myapp.io` or `staging.io` and
+assume it's free — plenty of short, plausible-sounding domains are real,
+registered, and in active use, and a browser hitting one **without** your
+`/etc/hosts` entry in place (a fresh profile, a different machine, DNS
+cache oddities) will silently reach someone else's server instead of
+failing loudly. Worse: if that real domain has
+[HSTS preloading](https://hstspreload.org/) enabled, browsers refuse plain
+HTTP for it *permanently*, breaking a plain-HTTP lab Traefik setup even
+after `/etc/hosts` is corrected — HSTS preload state lives in the browser
+itself, keyed by domain, and doesn't care what your hosts file says.
+
+Routing is host-header based. Either add `<node-ip> <your-hostname>` to
 `/etc/hosts` (works for browser access), or pass the header explicitly:
 
 ```bash
+# hostNetwork: no port at all
+curl -H "Host: <your-hostname>" http://<node-ip>/
+
+# NodePort: any node, but needs the port
 curl -H "Host: <your-hostname>" http://<any-node-ip>:<web-nodeport>/
 ```
 
-Any node IP works — `NodePort` listens on every node regardless of which
-one the Traefik pod landed on.
+With `NodePort`, any node IP works — it listens on every node regardless
+of which one the Traefik pod landed on. With `hostNetwork`, only the one
+node actually running the pod answers, so DNS has to point there
+specifically (see the `nodeSelector` above).
 
 ### Point an `Ingress` at it
 
@@ -281,13 +317,16 @@ spec:
 
 ### Debugging via the dashboard/API
 
-With `--api.insecure=true`, Traefik's own API is reachable on the
-`dashboard` NodePort with no auth — useful for confirming a route actually
-registered:
+With `--api.insecure=true`, Traefik's own API is reachable with no auth on
+port `8080` — useful for confirming a route actually registered:
 
 ```bash
-curl http://<any-node-ip>:<dashboard-nodeport>/api/http/routers | python3 -m json.tool
+curl http://<node-ip>:8080/api/http/routers | python3 -m json.tool
 ```
+
+(With `hostNetwork`, that's `<node-ip>` directly — the node Traefik is
+pinned to. With `NodePort`, it's whatever `dashboard` NodePort was
+assigned, on any node.)
 
 Look for a router named `<ingress-name>-<namespace>-<host>@kubernetes` with
 the expected `Host(...)` rule. If it's missing, check `ingressClassName`

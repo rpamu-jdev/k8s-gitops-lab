@@ -1,0 +1,62 @@
+# Build + deploy pipeline for hello-camel-service: clone -> kaniko build &
+# push -> roll the Deployment to the new image.
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: hello-camel-service-build-deploy
+  namespace: default
+spec:
+  params:
+    - name: git-url
+      type: string
+      default: http://10.137.160.1:3000/rpamu/k8s-gitops-lab.git
+    - name: git-revision
+      type: string
+      default: main
+    - name: image-tag
+      type: string
+      description: tag to build and deploy, e.g. 1.2.0
+    - name: registry
+      type: string
+      default: "10.137.160.1:3000"
+  workspaces:
+    - name: source
+  tasks:
+    - name: fetch-source
+      taskRef:
+        name: git-clone
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+      workspaces:
+        - name: source
+          workspace: source
+
+    - name: build-and-push
+      runAfter: ["fetch-source"]
+      taskRef:
+        name: kaniko-build
+      params:
+        - name: context-subdir
+          value: apps/java-app
+        - name: image
+          value: $(params.registry)/rpamu/hello-camel-service:$(params.image-tag)
+        - name: registry
+          value: $(params.registry)
+      workspaces:
+        - name: source
+          workspace: source
+
+    - name: deploy
+      runAfter: ["build-and-push"]
+      taskRef:
+        name: deploy
+      params:
+        - name: deployment
+          value: hello-camel-service
+        - name: container
+          value: hello-camel-service
+        - name: image
+          value: $(params.registry)/rpamu/hello-camel-service:$(params.image-tag)

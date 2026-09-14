@@ -13,7 +13,12 @@ available/reachable.
   upstream default (`default`) to `kube-system`, to match where Traefik
   actually runs here (alongside the cluster's other infra components)
 - `deploy.yaml` — hand-written ServiceAccount/Deployment/Service/
-  IngressClass, all in `kube-system`, version pinned to `traefik:v3.7.13`
+  IngressClass, all in `kube-system`, version pinned to `traefik:v3.7.13`.
+  Runs on `hostNetwork` (pinned to `k8s-node` via `nodeSelector`) so
+  everything reaches it with **no port number** — see
+  [../../docs/k8s-setup.md](../../docs/k8s-setup.md) for the `NodePort`
+  alternative if you'd rather have every node answer at the cost of a
+  port number in every URL.
 
 ## Apply
 
@@ -22,7 +27,7 @@ kubectl apply -f crds.yaml
 kubectl apply -f rbac.yaml
 kubectl apply -f deploy.yaml
 kubectl -n kube-system wait --for=condition=Ready pod -l app=traefik --timeout=120s
-kubectl -n kube-system get svc traefik   # note the NodePorts
+kubectl -n kube-system get pods -l app=traefik -o wide   # confirm it's on k8s-node
 ```
 
 ## Bump the version

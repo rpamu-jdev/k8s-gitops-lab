@@ -1,0 +1,39 @@
+# Spawns the same Pipeline used for manual runs, tagging the image with
+# the pushed commit's short SHA (so every auto-build produces a distinct,
+# traceable image tag - not a reused fixed version like the manual runs).
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: hello-camel-service-trigger-template
+  namespace: default
+spec:
+  params:
+    - name: git-repo-url
+    - name: short-sha
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: hello-camel-service-auto-
+      spec:
+        pipelineRef:
+          name: hello-camel-service-build-deploy
+        params:
+          - name: git-url
+            value: $(tt.params.git-repo-url)
+          - name: git-revision
+            value: main
+          - name: image-tag
+            value: $(tt.params.short-sha)
+        workspaces:
+          - name: source
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+        taskRunSpecs:
+          - pipelineTaskName: deploy
+            serviceAccountName: tekton-deployer

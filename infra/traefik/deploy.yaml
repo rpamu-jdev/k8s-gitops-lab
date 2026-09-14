@@ -22,6 +22,15 @@ spec:
         app: traefik
     spec:
       serviceAccountName: traefik-ingress-controller
+      # Binds directly to the node's own ports 80/443/8080 - no NodePort,
+      # no port number needed in URLs. Pinned to one node via nodeSelector
+      # so DNS pointing at that node's IP stays correct (hostNetwork pods
+      # only bind on whichever node they're actually scheduled to, unlike
+      # a NodePort Service which listens on every node).
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        kubernetes.io/hostname: k8s-node
       containers:
         - name: traefik
           image: traefik:v3.7.13
@@ -66,7 +75,7 @@ metadata:
   name: traefik
   namespace: kube-system
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: traefik
   ports:

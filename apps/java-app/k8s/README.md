@@ -24,9 +24,9 @@ kubectl apply -f ingressroute.yaml
   probes
 - **service.yaml** — ClusterIP, port 80 → container port 8080
 - **ingressroute.yaml** — Traefik-native `IngressRoute` (not a plain
-  `Ingress`) routing `api.staging.io/sample` to the service; requires
+  `Ingress`) routing `api.staging.test/sample` to the service; requires
   Traefik (see [../../../docs/k8s-setup.md](../../../docs/k8s-setup.md)).
-  `api.staging.io` is a **shared host across all apps** in this lab — each
+  `api.staging.test` is a **shared host across all apps** in this lab — each
   app gets its own path prefix under it (this app: `/sample`) instead of
   its own hostname, so a new app adds a new route rule rather than a new
   host. No `Middleware`/path-stripping needed here: the app's own
@@ -48,7 +48,7 @@ a rollout restart is needed to re-read the env vars at container start.
 ```bash
 kubectl get deployment,pod -l app=hello-camel-service
 kubectl get ingressroute hello-camel-service
-curl -H "Host: api.staging.io" http://<any-node-ip>:<ingress-http-nodeport>/sample/api/hello
+curl -H "Host: api.staging.test" http://<traefik-node-ip>/sample/api/hello
 ```
 
 (Only the Deployment/Pod carry the `app=hello-camel-service` label; the

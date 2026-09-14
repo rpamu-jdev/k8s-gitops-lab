@@ -24,18 +24,25 @@ spec:
           envFrom:
             - configMapRef:
                 name: hello-camel-service-config
+          # Startup time on this VM grew from ~6s (freshly booted cluster) to
+          # 40s+ once Traefik/dashboards/Tekton/Triggers were all sharing
+          # the same 4 vCPU/6GB node - the original tight probe windows
+          # (liveness killing at ~50s) turned into a crash loop under that
+          # load. Generous margins here instead of chasing the exact number.
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
               port: http
-            initialDelaySeconds: 10
+            initialDelaySeconds: 15
             periodSeconds: 5
+            failureThreshold: 12
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: http
-            initialDelaySeconds: 20
+            initialDelaySeconds: 60
             periodSeconds: 10
+            failureThreshold: 6
           resources:
             requests:
               cpu: 100m

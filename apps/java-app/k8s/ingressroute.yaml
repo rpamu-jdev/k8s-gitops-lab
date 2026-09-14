@@ -3,9 +3,9 @@
 # /sample/api/version (its base-path property, see application.yml),
 # so the full incoming path is forwarded to the service unchanged.
 #
-# Shared host across all apps in this lab: api.staging.io - not real DNS,
+# Shared host across all apps in this lab: api.staging.test - not real DNS,
 # either add it to /etc/hosts pointing at a node IP, or pass
-# Host: api.staging.io explicitly with curl. Each app gets its own path
+# Host: api.staging.test explicitly with curl. Each app gets its own path
 # prefix under that one host (this app: /sample) rather than its own
 # hostname, so a new app just adds a new route rule here rather than a new
 # host.
@@ -18,7 +18,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`api.staging.io`) && PathPrefix(`/sample`)
+    - match: Host(`api.staging.test`) && PathPrefix(`/sample`)
       kind: Rule
       services:
         - name: hello-camel-service

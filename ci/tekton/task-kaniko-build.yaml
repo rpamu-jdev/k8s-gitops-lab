@@ -1,0 +1,44 @@
+# Builds and pushes the image using Kaniko - same tool and same
+# registry-scoped insecure flags used for the earlier manual builds (see
+# docs/my-lab/hello-camel-service-deploy.md for why the scoped flags matter
+# over the global --insecure/--skip-tls-verify, which broke anonymous
+# Docker Hub base-image pulls).
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: kaniko-build
+  namespace: default
+spec:
+  params:
+    - name: context-subdir
+      type: string
+      description: subdirectory within the cloned source to use as the build context
+    - name: image
+      type: string
+      description: full destination image reference, e.g. 10.137.160.1:3000/rpamu/hello-camel-service:1.2.0
+    - name: registry
+      type: string
+      default: "10.137.160.1:3000"
+  workspaces:
+    - name: source
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: gitea-registry-creds
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+  steps:
+    - name: build-and-push
+      image: gcr.io/kaniko-project/executor:latest
+      volumeMounts:
+        - name: docker-config
+          mountPath: /kaniko/.docker
+      command:
+        - /kaniko/executor
+      args:
+        - --dockerfile=$(workspaces.source.path)/$(params.context-subdir)/Dockerfile
+        - --context=dir://$(workspaces.source.path)/$(params.context-subdir)
+        - --destination=$(params.image)
+        - --insecure-registry=$(params.registry)
+        - --skip-tls-verify-registry=$(params.registry)

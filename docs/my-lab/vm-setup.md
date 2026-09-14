@@ -114,6 +114,6 @@ ssh rpamu@10.137.160.148   # node
 - [x] `k8slab` network created and autostarting
 - [x] Both VMs created, cloud-init working, SSH access confirmed
 - [x] Kubernetes installed (see [k8s-setup.md](k8s-setup.md))
-- [ ] Tekton installed
+- [x] Tekton installed, sample Java app deployed via the pipeline (see
+      [k8s-setup.md](k8s-setup.md) and [hello-camel-service-deploy.md](hello-camel-service-deploy.md))
 - [ ] Argo CD installed
-- [ ] Sample Java app deployed via the pipeline

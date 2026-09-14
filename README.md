@@ -18,8 +18,17 @@ end-to-end.
 - [infra/traefik/](infra/traefik/) — the actual Traefik manifests applied
   (CRDs, RBAC, Deployment/Service/IngressClass), vendored rather than
   fetched from GitHub each time
-- `docs/tekton-setup.md` — Tekton Pipelines install and pipeline definitions
-  (coming soon)
+- [docs/tekton-setup.md](docs/tekton-setup.md) — Tekton Pipelines install,
+  the local-path-provisioner StorageClass it needs, the
+  git-clone/kaniko-build/deploy Tasks, and Tekton Triggers for automatic
+  builds on push (with a Gitea webhook)
+- [ci/tekton/](ci/tekton/) — the actual Tasks/Pipeline/PipelineRun/RBAC/
+  Triggers manifests for `hello-camel-service`'s build+deploy pipeline
+- [docs/dashboards-setup.md](docs/dashboards-setup.md) — Tekton Dashboard
+  and Kubernetes Dashboard, each on its own hostname via Traefik (not raw
+  NodePorts), with a deliberately read-only login for the k8s one
+- [infra/dashboards/](infra/dashboards/) — the RBAC and IngressRoute
+  manifests for both dashboards
 - `docs/argocd-setup.md` — Argo CD install and app-of-apps config (coming
   soon)
 - [docs/my-lab/](docs/my-lab/) — this lab's actual concrete setup (real IPs,
@@ -33,19 +42,35 @@ end-to-end.
   - [docs/my-lab/hello-camel-service-deploy.md](docs/my-lab/hello-camel-service-deploy.md)
     — building the image with Kaniko, deploying, and verifying IngressRoute
     access
+  - [docs/my-lab/tekton-setup.md](docs/my-lab/tekton-setup.md) — Tekton
+    install, the source-from-Gitea decision, the pipeline verified
+    end-to-end, and the automatic-build webhook (with the two real bugs
+    hit setting it up)
+  - [docs/my-lab/dashboards-setup.md](docs/my-lab/dashboards-setup.md) —
+    both dashboards' actual hostnames, the read-only login token, and why
+    hostnames instead of the app-style path convention here
 - [apps/java-app/](apps/java-app/) — `hello-camel-service`: Java 17 + Spring
   Boot 4 + Apache Camel 4 REST API (`/sample/api/hello`, `/sample/api/version`),
   configured via `GREETING_PREFIX`/`APP_ENVIRONMENT` env vars, reachable
-  in-cluster at `api.staging.io/sample/*` ([apps/java-app/k8s/](apps/java-app/k8s/))
+  in-cluster at `api.staging.test/sample/*` ([apps/java-app/k8s/](apps/java-app/k8s/))
 
 ## Ingress convention
 
-All apps in this lab share one host, `api.staging.io`, distinguished by
-path prefix rather than each getting its own hostname — a new app adds a
-new route rule to its `IngressRoute` (Traefik's native CRD, used instead of
-a plain `Ingress`) rather than a new host. Each app owns its full external
-path itself (`hello-camel-service`'s base path is `/sample/api`) rather
-than relying on a path-stripping `Middleware` at the ingress layer.
+Backend APIs in this lab share one host, `api.staging.test`, distinguished
+by path prefix rather than each getting its own hostname — a new app adds
+a new route rule to its `IngressRoute` (Traefik's native CRD, used instead
+of a plain `Ingress`) rather than a new host. Each app owns its full
+external path itself (`hello-camel-service`'s base path is `/sample/api`)
+rather than relying on a path-stripping `Middleware` at the ingress layer.
+
+The two admin dashboards and the Tekton webhook endpoint are the
+exception: each gets its **own hostname** (`tekton.staging.test`,
+`dashboard.staging.test`, `webhook.staging.test`) instead of a path under
+`api.staging.test`, since none of them are apps built with a configurable
+base path — a path prefix would break the dashboards' asset loading, and
+the webhook endpoint is an operational integration point rather than a
+backend API. Same Traefik entrypoint, same "DNS instead of a raw port
+number" goal either way.
 
 ## Topology
 

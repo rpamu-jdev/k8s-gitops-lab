@@ -1,0 +1,35 @@
+# ServiceAccount for the EventListener pod, bound to the standard
+# ClusterRoles Tekton Triggers ships (tekton-triggers-eventlistener-roles /
+# -clusterroles - see release.yaml), plus the same tekton-deployer Role
+# used by the deploy Task, since PipelineRuns it creates run as that SA too.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: el-webhook
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: el-webhook-eventlistener-roles
+subjects:
+  - kind: ServiceAccount
+    name: el-webhook
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-roles
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: el-webhook-eventlistener-clusterroles
+subjects:
+  - kind: ServiceAccount
+    name: el-webhook
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-clusterroles
+  apiGroup: rbac.authorization.k8s.io

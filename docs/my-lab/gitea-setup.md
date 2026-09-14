@@ -63,4 +63,5 @@ server = "http://10.137.160.1:3000"
 - [x] Push/pull/pod-scheduling verified end-to-end
 - [x] Systemd persistence — `gitea.service` installed and enabled
       (`systemctl enable --now gitea`), survives reboots/crashes now
-- [ ] First real git repo created for the sample Java app
+- [x] Real repo pushed (this repo, `k8s-gitops-lab`, public) — used as the
+      Tekton pipeline's git source, see [tekton-setup.md](tekton-setup.md)

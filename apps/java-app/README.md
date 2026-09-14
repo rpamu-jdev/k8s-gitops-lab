@@ -50,11 +50,12 @@ docker build -t hello-camel-service:local .
 docker run -p 8080:8080 hello-camel-service:local
 ```
 
-In the lab, this was built and pushed to the local Gitea registry via
-Kaniko run directly on a node (`10.137.160.1:3000/rpamu/hello-camel-service`)
-— see [../../docs/gitea-setup.md](../../docs/gitea-setup.md). A Tekton
-pipeline will automate this step once that's set up (see
-`docs/tekton-setup.md`, not yet written).
+In the lab, this is built and pushed to the local Gitea registry
+(`10.137.160.1:3000/rpamu/hello-camel-service`) — first done manually via a
+one-off Kaniko run, now automated by a Tekton pipeline
+(`kubectl create -f ../../ci/tekton/pipelinerun.yaml`) that clones from
+Gitea, builds+pushes with Kaniko, and rolls the Deployment to the new
+image. See [../../docs/tekton-setup.md](../../docs/tekton-setup.md).
 
 ## Deploy to Kubernetes
 
@@ -64,7 +65,7 @@ roll out config changes. The `IngressRoute` requires the Traefik controller
 (installed as a standard part of cluster setup — see
 [../../docs/k8s-setup.md](../../docs/k8s-setup.md)).
 
-In the cluster, this app is reachable under `api.staging.io/sample/*` — a
+In the cluster, this app is reachable under `api.staging.test/sample/*` — a
 shared host used across all apps in this lab, with each app given its own
 path prefix rather than its own hostname. Unlike a typical path-based
 ingress setup, there's no prefix-stripping `Middleware` involved: the app's

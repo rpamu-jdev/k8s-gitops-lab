@@ -1,0 +1,20 @@
+# Read-only login for the Kubernetes Dashboard - deliberately NOT
+# cluster-admin. See docs/my-lab/dashboards-setup.md for why.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dashboard-viewer
+  namespace: kubernetes-dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dashboard-viewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: dashboard-viewer
+    namespace: kubernetes-dashboard

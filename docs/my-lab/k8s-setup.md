@@ -120,10 +120,63 @@ kubectl apply -f infra/traefik/deploy.yaml
 
 Came up `1/1 Running` in the `kube-system` namespace (moved here from
 `default` — matches where the cluster's other infra components live:
-Calico, CoreDNS, kube-proxy). NodePorts assigned:
-- HTTP (`web`): `32185`
-- HTTPS (`websecure`): `30648`
-- Dashboard/API: `31831`
+Calico, CoreDNS, kube-proxy).
+
+Initially exposed via `NodePort` (HTTP `32185`, HTTPS `30648`,
+dashboard/API `31831`), then **switched to `hostNetwork`** to drop the
+port number from every URL entirely — see the next section.
+
+## Dropping the port: Traefik on hostNetwork
+
+`NodePort` numbers work but aren't memorable. Switched Traefik's pod to
+`hostNetwork: true` (binds directly to the node's own ports 80/443/8080)
+with `dnsPolicy: ClusterFirstWithHostNet`, pinned via `nodeSelector` to
+`k8s-node` — `hostNetwork` pods only bind on the one node they're actually
+scheduled to, unlike a `NodePort` Service which listens cluster-wide, so
+DNS has to point at that specific node consistently. The `Service` went
+from `NodePort` back to `ClusterIP` (no longer serving any external-access
+purpose once `hostNetwork` handles that directly).
+
+```bash
+kubectl apply -f infra/traefik/deploy.yaml
+kubectl -n kube-system get pods -l app=traefik -o wide
+# -> IP column now shows 10.137.160.148 (k8s-node's own IP), not a pod IP
+```
+
+Verified immediately after the rollout — no restart needed on
+`hello-camel-service` or either dashboard, since none of them changed,
+only how traffic reaches Traefik:
+
+```bash
+curl -H "Host: api.staging.test" http://10.137.160.148/sample/api/hello
+curl -H "Host: tekton.staging.test" http://10.137.160.148/
+curl -H "Host: dashboard.staging.test" http://10.137.160.148/
+# all three -> 200, no port anywhere
+```
+
+`/etc/hosts` entries updated to point at `10.137.160.148` (the node
+Traefik is now pinned to) instead of `.147`:
+
+```
+10.137.160.148  api.staging.test tekton.staging.test dashboard.staging.test
+```
+
+## A real mistake: `staging.io` was a live public domain
+
+The lab's shared host was originally `api.staging.io`/`tekton.staging.io`/
+`dashboard.staging.io` — assumed to be a safe made-up name. It isn't:
+`staging.io` is registered and actively hosting a real site (on surge.sh).
+Browsing to `tekton.staging.io` before `/etc/hosts` was in place reached
+that real site's "project not found" page — and the browser auto-upgraded
+to `https://` on its own, the signature of HSTS preloading, meaning it
+would have kept refusing plain HTTP for that domain even *after*
+`/etc/hosts` was corrected.
+
+Fixed by switching every hostname to the `.test` TLD (reserved by
+[RFC 2606](https://www.rfc-editor.org/rfc/rfc2606) specifically so this
+can't happen): `api.staging.test`, `tekton.staging.test`,
+`dashboard.staging.test`. See [k8s-setup.md](../k8s-setup.md)'s "Point a
+hostname at it" section for the general lesson.
 
 ## Status
 
@@ -132,6 +185,9 @@ Calico, CoreDNS, kube-proxy). NodePorts assigned:
 - [x] CoreDNS healthy
 - [x] kubectl working locally on the host (not just over SSH)
 - [x] Traefik ingress controller installed and verified
-- [ ] Tekton installed
+- [x] Tekton installed — see [tekton-setup.md](tekton-setup.md)
+- [x] Sample Java app deployed via the pipeline — see
+      [hello-camel-service-deploy.md](hello-camel-service-deploy.md)
+- [x] Tekton Dashboard and Kubernetes Dashboard installed and reachable —
+      see [dashboards-setup.md](dashboards-setup.md)
 - [ ] Argo CD installed
-- [ ] Sample Java app deployed via the pipeline
