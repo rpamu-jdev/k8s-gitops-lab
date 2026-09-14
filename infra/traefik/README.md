@@ -8,11 +8,12 @@ available/reachable.
 
 - `crds.yaml` — Traefik's CRDs (IngressRoute, Middleware, etc.), fetched
   from upstream `traefik/traefik` v3.7 tag, unmodified
-- `rbac.yaml` — ClusterRole/ClusterRoleBinding, fetched from the same tag,
-  unmodified (expects ServiceAccount `traefik-ingress-controller` in the
-  `default` namespace — matched in `deploy.yaml` rather than edited here)
+- `rbac.yaml` — ClusterRole/ClusterRoleBinding, fetched from the same tag;
+  the `ClusterRoleBinding`'s subject namespace was changed from the
+  upstream default (`default`) to `kube-system`, to match where Traefik
+  actually runs here (alongside the cluster's other infra components)
 - `deploy.yaml` — hand-written ServiceAccount/Deployment/Service/
-  IngressClass, version pinned to `traefik:v3.7.13`
+  IngressClass, all in `kube-system`, version pinned to `traefik:v3.7.13`
 
 ## Apply
 
@@ -20,8 +21,8 @@ available/reachable.
 kubectl apply -f crds.yaml
 kubectl apply -f rbac.yaml
 kubectl apply -f deploy.yaml
-kubectl wait --for=condition=Ready pod -l app=traefik --timeout=120s
-kubectl get svc traefik   # note the NodePorts
+kubectl -n kube-system wait --for=condition=Ready pod -l app=traefik --timeout=120s
+kubectl -n kube-system get svc traefik   # note the NodePorts
 ```
 
 ## Bump the version

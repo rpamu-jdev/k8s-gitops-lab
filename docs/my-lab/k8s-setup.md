@@ -118,15 +118,12 @@ kubectl apply -f infra/traefik/rbac.yaml
 kubectl apply -f infra/traefik/deploy.yaml
 ```
 
-Came up `1/1 Running` in the `default` namespace. NodePorts assigned:
-- HTTP (`web`): `31834`
-- HTTPS (`websecure`): `30303`
-- Dashboard/API: `30469`
-
-`hello-camel-service`'s `Ingress` just sets `ingressClassName: traefik`.
-Verified end-to-end from both nodes and via Traefik's own router API — see
-[hello-camel-service-deploy.md](hello-camel-service-deploy.md) for the
-full request/response trace.
+Came up `1/1 Running` in the `kube-system` namespace (moved here from
+`default` — matches where the cluster's other infra components live:
+Calico, CoreDNS, kube-proxy). NodePorts assigned:
+- HTTP (`web`): `32185`
+- HTTPS (`websecure`): `30648`
+- Dashboard/API: `31831`
 
 ## Status
 

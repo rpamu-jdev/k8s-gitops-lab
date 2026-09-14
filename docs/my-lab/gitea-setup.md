@@ -42,25 +42,6 @@ server = "http://10.137.160.1:3000"
   capabilities = ["pull", "resolve", "push"]
 ```
 
-## Consolidation: replaced the earlier registry:2 setup
-
-This lab originally ran a separate anonymous `registry:2` container on
-`k8s-node` (see the now-removed `my-lab/registry-setup.md`). Once Gitea's
-built-in registry was verified working, that was redundant, so it was torn
-down:
-
-```bash
-sudo nerdctl rm -f registry
-sudo rm -rf /var/lib/registry-data
-# on both nodes:
-sudo rm -rf '/etc/containerd/certs.d/10.137.160.148:5000'
-sudo systemctl restart containerd
-```
-
-Both nodes stayed `Ready` throughout. Gitea's registry is now the only image
-source for this lab besides public registries (Docker Hub, `registry.k8s.io`,
-`quay.io`).
-
 ## Verified working
 
 - `curl http://10.137.160.1:3000/` returns 200 from both host and VMs.
@@ -80,7 +61,6 @@ source for this lab besides public registries (Docker Hub, `registry.k8s.io`,
 - [x] Admin user + token created
 - [x] Both nodes trust it as an insecure registry
 - [x] Push/pull/pod-scheduling verified end-to-end
-- [x] Old `registry:2` on `k8s-node` removed, consolidated onto Gitea
 - [x] Systemd persistence — `gitea.service` installed and enabled
       (`systemctl enable --now gitea`), survives reboots/crashes now
 - [ ] First real git repo created for the sample Java app

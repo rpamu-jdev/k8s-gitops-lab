@@ -13,7 +13,7 @@
 
   <groupId>com.lab</groupId>
   <artifactId>hello-camel-service</artifactId>
-  <version>1.0.0</version>
+  <version>1.1.0</version>
   <name>hello-camel-service</name>
   <description>Sample Apache Camel + Spring Boot REST API for the k8s-gitops-lab</description>
 

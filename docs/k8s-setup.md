@@ -121,8 +121,10 @@ kubectl apply -f traefik-rbac.yaml
 ```
 
 The RBAC manifest expects a `ServiceAccount` named `traefik-ingress-controller`
-in the `default` namespace — match that in the Deployment below rather than
-editing the fetched YAML.
+in the `default` namespace — edit that namespace in the fetched
+`ClusterRoleBinding` if you want Traefik somewhere else (this lab uses
+`kube-system`, alongside the cluster's other infra components like
+Calico/CoreDNS/kube-proxy), and match it in the Deployment below.
 
 Deploy Traefik itself:
 
@@ -131,13 +133,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: traefik-ingress-controller
-  namespace: default
+  namespace: kube-system
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: traefik
-  namespace: default
+  namespace: kube-system
   labels:
     app: traefik
 spec:
@@ -181,7 +183,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: traefik
-  namespace: default
+  namespace: kube-system
 spec:
   type: NodePort
   selector:
@@ -210,8 +212,8 @@ provisioner on a bare kubeadm cluster.
 
 ```bash
 kubectl apply -f traefik-deploy.yaml
-kubectl wait --for=condition=Ready pod -l app=traefik --timeout=120s
-kubectl get svc traefik   # note the NodePorts
+kubectl -n kube-system wait --for=condition=Ready pod -l app=traefik --timeout=120s
+kubectl -n kube-system get svc traefik   # note the NodePorts
 ```
 
 ### Point a hostname at it
@@ -227,6 +229,9 @@ Any node IP works — `NodePort` listens on every node regardless of which
 one the Traefik pod landed on.
 
 ### Point an `Ingress` at it
+
+A plain, portable `Ingress` works (Traefik watches these natively — no
+`IngressRoute` needed for basic host/path routing):
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -247,6 +252,31 @@ spec:
                 name: <service-name>
                 port:
                   number: <service-port>
+```
+
+### Or use Traefik's native `IngressRoute` instead
+
+Worth it once you need Traefik-specific features (weighted routing, custom
+middlewares) — or, as this lab settled on, when you'd rather have the app
+own its full external path than rely on a path-stripping `Middleware`
+alongside a plain `Ingress`. Requires the CRDs from the install step above
+(`traefik-crds.yaml`) but not `ingressClassName`/`IngressClass` at all:
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: <name>
+  namespace: <namespace>
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`<your-lab-hostname>`) && PathPrefix(`/<path>`)
+      kind: Rule
+      services:
+        - name: <service-name>
+          port: <service-port>
 ```
 
 ### Debugging via the dashboard/API

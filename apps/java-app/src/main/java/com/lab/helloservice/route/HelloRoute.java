@@ -10,8 +10,12 @@ import org.springframework.stereotype.Component;
 
 /**
  * REST routes for the sample app:
- *   GET /api/hello   -> a friendly greeting
- *   GET /api/version -> app + runtime version info
+ *   GET {base-path}/hello   -> a friendly greeting
+ *   GET {base-path}/version -> app + runtime version info
+ *
+ * {base-path} defaults to /sample/api, matching this app's Ingress path
+ * prefix in the cluster - the app owns its full external path rather than
+ * having a prefix stripped at the ingress layer.
  */
 @Component
 public class HelloRoute extends RouteBuilder {
@@ -28,6 +32,9 @@ public class HelloRoute extends RouteBuilder {
     @Value("${app.environment}")
     private String environment;
 
+    @Value("${app.base-path}")
+    private String basePath;
+
     @Override
     public void configure() {
         restConfiguration()
@@ -35,7 +42,7 @@ public class HelloRoute extends RouteBuilder {
                 .bindingMode(RestBindingMode.json)
                 .dataFormatProperty("prettyPrint", "true");
 
-        rest("/api")
+        rest(basePath)
                 .get("/hello")
                     .to("direct:hello")
                 .get("/version")

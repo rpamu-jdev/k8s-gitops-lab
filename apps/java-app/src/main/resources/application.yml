@@ -6,6 +6,11 @@ app:
   version: "@project.version@"
   greeting-prefix: ${GREETING_PREFIX:Hello}
   environment: ${APP_ENVIRONMENT:local}
+  # matches this app's Ingress path prefix in the cluster (see
+  # apps/java-app/k8s/) - kept in sync with the routing convention rather
+  # than stripped at the ingress layer, so the app's own routes are the
+  # actual externally-visible paths.
+  base-path: ${BASE_PATH:/sample/api}
 
 camel:
   springboot:

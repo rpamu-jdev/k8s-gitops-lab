@@ -31,11 +31,21 @@ end-to-end.
   - [docs/my-lab/gitea-setup.md](docs/my-lab/gitea-setup.md) — Gitea's actual
     address, credentials location, and the registry consolidation done
   - [docs/my-lab/hello-camel-service-deploy.md](docs/my-lab/hello-camel-service-deploy.md)
-    — building the image with Kaniko, deploying, and verifying Ingress access
+    — building the image with Kaniko, deploying, and verifying IngressRoute
+    access
 - [apps/java-app/](apps/java-app/) — `hello-camel-service`: Java 17 + Spring
-  Boot 4 + Apache Camel 4 REST API (`/api/hello`, `/api/version`), configured
-  via `GREETING_PREFIX`/`APP_ENVIRONMENT` env vars, deployed to the cluster
-  behind Ingress ([apps/java-app/k8s/](apps/java-app/k8s/))
+  Boot 4 + Apache Camel 4 REST API (`/sample/api/hello`, `/sample/api/version`),
+  configured via `GREETING_PREFIX`/`APP_ENVIRONMENT` env vars, reachable
+  in-cluster at `api.staging.io/sample/*` ([apps/java-app/k8s/](apps/java-app/k8s/))
+
+## Ingress convention
+
+All apps in this lab share one host, `api.staging.io`, distinguished by
+path prefix rather than each getting its own hostname — a new app adds a
+new route rule to its `IngressRoute` (Traefik's native CRD, used instead of
+a plain `Ingress`) rather than a new host. Each app owns its full external
+path itself (`hello-camel-service`'s base path is `/sample/api`) rather
+than relying on a path-stripping `Middleware` at the ingress layer.
 
 ## Topology
 
