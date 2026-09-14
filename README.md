@@ -9,13 +9,12 @@ end-to-end.
 - [docs/vm-setup.md](docs/vm-setup.md) — generic libvirt/KVM host setup,
   network, and VM creation steps (reusable on any Ubuntu/Debian host)
 - [docs/k8s-setup.md](docs/k8s-setup.md) — generic kubespray-based Kubernetes
-  install steps, plus a troubleshooting section for flaky-network symptoms
+  install steps (including the Traefik ingress controller, treated as a
+  required part of standing up the cluster, not optional), plus a
+  troubleshooting section for flaky-network symptoms
 - [docs/gitea-setup.md](docs/gitea-setup.md) — local Gitea (git server +
   built-in container registry) running on the host, plus the containerd
   `certs.d` trust config so the cluster can pull from it
-- [docs/ingress-setup.md](docs/ingress-setup.md) — installing Traefik on a
-  bare kubeadm/kubespray cluster (not shipped by default), NodePort access,
-  and how `Ingress` host routing works without real DNS
 - [infra/traefik/](infra/traefik/) — the actual Traefik manifests applied
   (CRDs, RBAC, Deployment/Service/IngressClass), vendored rather than
   fetched from GitHub each time

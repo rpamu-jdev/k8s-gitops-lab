@@ -53,36 +53,11 @@ Confirmed `1/1 Running`, landed on `k8s-node`.
 
 ## Ingress
 
-Initially ran ingress-nginx (baremetal provider), then **replaced it with
-Traefik** — see [../ingress-setup.md](../ingress-setup.md) for the full
-manifests and why the swap was low-friction. Removed ingress-nginx entirely
-first:
-
-```bash
-kubectl delete namespace ingress-nginx
-kubectl delete ingressclass nginx
-kubectl delete clusterrole ingress-nginx ingress-nginx-admission
-kubectl delete clusterrolebinding ingress-nginx ingress-nginx-admission
-kubectl delete validatingwebhookconfiguration ingress-nginx-admission
-```
-
-Then installed Traefik v3.7.13 (CRDs + RBAC from upstream, Deployment/
-Service/IngressClass written by hand — see `../ingress-setup.md`):
-
-```bash
-kubectl apply -f traefik-crds.yaml
-kubectl apply -f traefik-rbac.yaml
-kubectl apply -f traefik-deploy.yaml
-```
-
-Came up `1/1 Running` in the `default` namespace, NodePorts assigned:
-- HTTP (`web`): `31834`
-- HTTPS (`websecure`): `30303`
-- Dashboard/API: `30469`
-
-Then just changed `apps/java-app/k8s/ingress.yaml`'s `ingressClassName`
-from `nginx` to `traefik` and re-applied — no other changes needed, since
-Traefik watches plain `Ingress` objects natively.
+Traefik (installed as a standard part of cluster setup — see
+[k8s-setup.md](k8s-setup.md)) was already running by the time this app was
+deployed. Just needed `apps/java-app/k8s/ingress.yaml`'s
+`ingressClassName: traefik` and applying it, no extra ingress-specific work
+for this app.
 
 ## Verified working end-to-end
 

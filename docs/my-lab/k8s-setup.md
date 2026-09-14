@@ -85,26 +85,69 @@ netplan fix. Sequence of what happened:
 
 ## Day-2 kubectl access
 
-Installing `kubectl` locally on the host itself hit the exact same
-hotspot-related flakiness (partial downloads timing out), so for now this
-lab just drives kubectl over SSH to the master rather than fighting the host's
-own network:
+Installing `kubectl` directly on the host hit the same hotspot-related
+flakiness (partial downloads timing out) at first. Worked around it the
+same way as everything else network-bound in this lab: downloaded the
+binary via `k8s-master` (whose network path was already fixed) and `scp`'d
+it over, rather than fighting the host's connection directly:
 
 ```bash
-ssh rpamu@10.137.160.147
-sudo kubectl get nodes
-sudo kubectl get pods -A
+ssh rpamu@10.137.160.147 "curl -fsSL -o /tmp/kubectl https://dl.k8s.io/release/v1.36.4/bin/linux/amd64/kubectl"
+scp rpamu@10.137.160.147:/tmp/kubectl ~/.local/bin/kubectl
+chmod +x ~/.local/bin/kubectl
+
+mkdir -p ~/.kube
+ssh rpamu@10.137.160.147 "sudo cat /etc/kubernetes/admin.conf" > ~/.kube/config-k8slab
+chmod 600 ~/.kube/config-k8slab
 ```
 
-If/when the host is on a normal network, pulling a local `kubectl` and
-copying `/etc/kubernetes/admin.conf` (see the generic doc) is the nicer
-option.
+`~/.local/bin` on `PATH` and `KUBECONFIG=~/.kube/config-k8slab` both added
+to `~/.bashrc`. `kubectl get nodes` now works directly from the host, no
+SSH needed.
+
+## Ingress: Traefik
+
+Following [../k8s-setup.md](../k8s-setup.md)'s ingress section. Initially
+installed ingress-nginx (its baremetal manifest), then **replaced it with
+Traefik** — removed ingress-nginx entirely first:
+
+```bash
+kubectl delete namespace ingress-nginx
+kubectl delete ingressclass nginx
+kubectl delete clusterrole ingress-nginx ingress-nginx-admission
+kubectl delete clusterrolebinding ingress-nginx ingress-nginx-admission
+kubectl delete validatingwebhookconfiguration ingress-nginx-admission
+```
+
+Then installed Traefik v3.7.13 — manifests vendored at
+[../../infra/traefik/](../../infra/traefik/) rather than fetched from GitHub
+each time:
+
+```bash
+kubectl apply -f infra/traefik/crds.yaml
+kubectl apply -f infra/traefik/rbac.yaml
+kubectl apply -f infra/traefik/deploy.yaml
+```
+
+Came up `1/1 Running` in the `default` namespace. NodePorts assigned:
+- HTTP (`web`): `31834`
+- HTTPS (`websecure`): `30303`
+- Dashboard/API: `30469`
+
+Switching `hello-camel-service`'s `Ingress` from nginx to Traefik only
+needed `ingressClassName: nginx` → `traefik` and a re-apply — no other
+changes, since Traefik watches plain `Ingress` objects natively. Verified
+end-to-end from both nodes and via Traefik's own router API — see
+[hello-camel-service-deploy.md](hello-camel-service-deploy.md) for the
+full request/response trace.
 
 ## Status
 
 - [x] Kubernetes v1.36.4 installed, both nodes `Ready`
 - [x] Calico CNI healthy
 - [x] CoreDNS healthy
+- [x] kubectl working locally on the host (not just over SSH)
+- [x] Traefik ingress controller installed and verified
 - [ ] Tekton installed
 - [ ] Argo CD installed
 - [ ] Sample Java app deployed via the pipeline

@@ -1,9 +1,10 @@
 # Traefik ingress controller manifests
 
-Vendored copies of what's actually applied to this cluster (see
-[../../docs/ingress-setup.md](../../docs/ingress-setup.md) for the full
-writeup). Kept here so a cluster rebuild doesn't depend on GitHub raw URLs
-staying available/reachable.
+Vendored copies of what's actually applied to this cluster (see the
+"Install an ingress controller" section of
+[../../docs/k8s-setup.md](../../docs/k8s-setup.md) for the full writeup).
+Kept here so a cluster rebuild doesn't depend on GitHub raw URLs staying
+available/reachable.
 
 - `crds.yaml` — Traefik's CRDs (IngressRoute, Middleware, etc.), fetched
   from upstream `traefik/traefik` v3.7 tag, unmodified

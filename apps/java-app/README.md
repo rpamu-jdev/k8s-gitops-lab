@@ -57,5 +57,6 @@ pipeline will automate this step once that's set up (see
 
 See [k8s/](k8s/) for the manifests (Namespace, ConfigMap, Deployment,
 Service, Ingress) and [k8s/README.md](k8s/README.md) for how to apply them
-and roll out config changes. Ingress requires ingress-nginx — see
-[../../docs/ingress-setup.md](../../docs/ingress-setup.md).
+and roll out config changes. Ingress requires the Traefik controller
+(installed as a standard part of cluster setup — see
+[../../docs/k8s-setup.md](../../docs/k8s-setup.md)).
