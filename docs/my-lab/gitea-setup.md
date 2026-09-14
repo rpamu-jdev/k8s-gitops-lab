@@ -81,6 +81,6 @@ source for this lab besides public registries (Docker Hub, `registry.k8s.io`,
 - [x] Both nodes trust it as an insecure registry
 - [x] Push/pull/pod-scheduling verified end-to-end
 - [x] Old `registry:2` on `k8s-node` removed, consolidated onto Gitea
-- [ ] Systemd persistence — unit file written, needs to be installed with
-      `sudo` (manual step, not run by the assistant)
+- [x] Systemd persistence — `gitea.service` installed and enabled
+      (`systemctl enable --now gitea`), survives reboots/crashes now
 - [ ] First real git repo created for the sample Java app

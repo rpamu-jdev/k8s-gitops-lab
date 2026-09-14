@@ -95,6 +95,18 @@ ssh rpamu@10.137.160.148   # node
     Applied with `sudo netplan apply` on each VM. If this lab ever moves to
     a normal home/office network, this override probably isn't needed —
     but it's harmless to leave in place.
+  - The same DNS flakiness hits the **host** directly too, not just the
+    VMs — `git push`/`ssh` to `github.com` from the host would intermittently
+    fail to resolve at all (no usable IPv4 record, only an inconsistent
+    NAT64-synthesized IPv6 one). Rather than touch the host's system DNS
+    (needs `sudo`), added an SSH tunnel through `k8s-master` for GitHub
+    specifically, in `~/.ssh/config`:
+    ```
+    Host github.com
+      ProxyCommand ssh -q rpamu@10.137.160.147 -W %h:%p
+    ```
+    This only relays raw TCP bytes through the VM — the VM never sees the
+    host's private key, SSH negotiation still happens end-to-end host↔GitHub.
 
 ## Current status
 
