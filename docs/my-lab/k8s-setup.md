@@ -107,19 +107,8 @@ SSH needed.
 
 ## Ingress: Traefik
 
-Following [../k8s-setup.md](../k8s-setup.md)'s ingress section. Initially
-installed ingress-nginx (its baremetal manifest), then **replaced it with
-Traefik** — removed ingress-nginx entirely first:
-
-```bash
-kubectl delete namespace ingress-nginx
-kubectl delete ingressclass nginx
-kubectl delete clusterrole ingress-nginx ingress-nginx-admission
-kubectl delete clusterrolebinding ingress-nginx ingress-nginx-admission
-kubectl delete validatingwebhookconfiguration ingress-nginx-admission
-```
-
-Then installed Traefik v3.7.13 — manifests vendored at
+Following [../k8s-setup.md](../k8s-setup.md)'s ingress section. Installed
+Traefik v3.7.13 — manifests vendored at
 [../../infra/traefik/](../../infra/traefik/) rather than fetched from GitHub
 each time:
 
@@ -134,10 +123,8 @@ Came up `1/1 Running` in the `default` namespace. NodePorts assigned:
 - HTTPS (`websecure`): `30303`
 - Dashboard/API: `30469`
 
-Switching `hello-camel-service`'s `Ingress` from nginx to Traefik only
-needed `ingressClassName: nginx` → `traefik` and a re-apply — no other
-changes, since Traefik watches plain `Ingress` objects natively. Verified
-end-to-end from both nodes and via Traefik's own router API — see
+`hello-camel-service`'s `Ingress` just sets `ingressClassName: traefik`.
+Verified end-to-end from both nodes and via Traefik's own router API — see
 [hello-camel-service-deploy.md](hello-camel-service-deploy.md) for the
 full request/response trace.
 
