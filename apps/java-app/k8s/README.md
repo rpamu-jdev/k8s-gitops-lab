@@ -27,7 +27,7 @@ kubectl apply -f ingress.yaml
   probes
 - **service.yaml** — ClusterIP, port 80 → container port 8080
 - **ingress.yaml** — routes `hello.lab.local` to the service; requires
-  ingress-nginx (see [../../../docs/ingress-setup.md](../../../docs/ingress-setup.md))
+  Traefik (see [../../../docs/ingress-setup.md](../../../docs/ingress-setup.md))
 
 ## Rolling out a config change
 

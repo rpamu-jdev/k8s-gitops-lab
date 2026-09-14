@@ -13,9 +13,12 @@ end-to-end.
 - [docs/gitea-setup.md](docs/gitea-setup.md) — local Gitea (git server +
   built-in container registry) running on the host, plus the containerd
   `certs.d` trust config so the cluster can pull from it
-- [docs/ingress-setup.md](docs/ingress-setup.md) — installing ingress-nginx
-  on a bare kubeadm/kubespray cluster (not shipped by default), NodePort
-  access, and how `Ingress` host routing works without real DNS
+- [docs/ingress-setup.md](docs/ingress-setup.md) — installing Traefik on a
+  bare kubeadm/kubespray cluster (not shipped by default), NodePort access,
+  and how `Ingress` host routing works without real DNS
+- [infra/traefik/](infra/traefik/) — the actual Traefik manifests applied
+  (CRDs, RBAC, Deployment/Service/IngressClass), vendored rather than
+  fetched from GitHub each time
 - `docs/tekton-setup.md` — Tekton Pipelines install and pipeline definitions
   (coming soon)
 - `docs/argocd-setup.md` — Argo CD install and app-of-apps config (coming

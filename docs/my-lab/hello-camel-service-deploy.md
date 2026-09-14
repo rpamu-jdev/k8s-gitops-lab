@@ -53,22 +53,42 @@ Confirmed `1/1 Running`, landed on `k8s-node`.
 
 ## Ingress
 
-Installed ingress-nginx (baremetal provider — see
-[../ingress-setup.md](../ingress-setup.md)) since kubespray doesn't ship one:
+Initially ran ingress-nginx (baremetal provider), then **replaced it with
+Traefik** — see [../ingress-setup.md](../ingress-setup.md) for the full
+manifests and why the swap was low-friction. Removed ingress-nginx entirely
+first:
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
+kubectl delete namespace ingress-nginx
+kubectl delete ingressclass nginx
+kubectl delete clusterrole ingress-nginx ingress-nginx-admission
+kubectl delete clusterrolebinding ingress-nginx ingress-nginx-admission
+kubectl delete validatingwebhookconfiguration ingress-nginx-admission
 ```
 
-Controller came up `1/1 Running`, NodePorts assigned:
-- HTTP: `32090`
-- HTTPS: `32534`
+Then installed Traefik v3.7.13 (CRDs + RBAC from upstream, Deployment/
+Service/IngressClass written by hand — see `../ingress-setup.md`):
+
+```bash
+kubectl apply -f traefik-crds.yaml
+kubectl apply -f traefik-rbac.yaml
+kubectl apply -f traefik-deploy.yaml
+```
+
+Came up `1/1 Running` in the `default` namespace, NodePorts assigned:
+- HTTP (`web`): `31834`
+- HTTPS (`websecure`): `30303`
+- Dashboard/API: `30469`
+
+Then just changed `apps/java-app/k8s/ingress.yaml`'s `ingressClassName`
+from `nginx` to `traefik` and re-applied — no other changes needed, since
+Traefik watches plain `Ingress` objects natively.
 
 ## Verified working end-to-end
 
 ```bash
-curl -H "Host: hello.lab.local" http://10.137.160.147:32090/api/hello
-curl -H "Host: hello.lab.local" http://10.137.160.148:32090/api/hello
+curl -H "Host: hello.lab.local" http://10.137.160.147:31834/api/hello
+curl -H "Host: hello.lab.local" http://10.137.160.148:31834/api/hello
 ```
 
 Both nodes answered identically (NodePort listens cluster-wide, regardless
@@ -78,13 +98,20 @@ confirmed the `ConfigMap`-supplied env var took effect —
 app's built-in default) — proving the whole env-var → ConfigMap → pod path
 works, not just that the pod started.
 
+Also confirmed the route registered correctly via Traefik's own API:
+```bash
+curl http://10.137.160.147:30469/api/http/routers | python3 -c "..."
+# -> hello-camel-service-hello-camel-service-hello-lab-local@kubernetes
+#    Host("hello.lab.local") && PathPrefix("/")
+```
+
 ## Status
 
 - [x] Image built and pushed to Gitea registry via Kaniko
 - [x] App deployed to `hello-camel-service` namespace, `1/1 Running`
-- [x] ingress-nginx installed and healthy
+- [x] Traefik installed and healthy (replaced ingress-nginx)
 - [x] Ingress-routed access verified from both nodes, env var config
-      confirmed flowing through
+      confirmed flowing through, route confirmed in Traefik's own API
 - [ ] `/etc/hosts` entry or real DNS for `hello.lab.local` (currently
       accessed via explicit `Host:` header only)
 - [ ] Automate build+push via Tekton (currently manual Kaniko run)

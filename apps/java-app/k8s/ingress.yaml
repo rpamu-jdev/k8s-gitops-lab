@@ -1,4 +1,4 @@
-# Requires the ingress-nginx controller (see docs/ingress-setup.md).
+# Requires the Traefik ingress controller (see docs/ingress-setup.md).
 # hello.lab.local isn't real DNS - either add it to /etc/hosts pointing at
 # a node IP, or pass Host: hello.lab.local explicitly with curl.
 apiVersion: networking.k8s.io/v1
@@ -7,7 +7,7 @@ metadata:
   name: hello-camel-service
   namespace: hello-camel-service
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   rules:
     - host: hello.lab.local
       http:
