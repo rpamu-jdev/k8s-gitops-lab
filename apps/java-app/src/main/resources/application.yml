@@ -4,6 +4,8 @@ server:
 app:
   name: hello-camel-service
   version: "@project.version@"
+  greeting-prefix: ${GREETING_PREFIX:Hello}
+  environment: ${APP_ENVIRONMENT:local}
 
 camel:
   springboot:

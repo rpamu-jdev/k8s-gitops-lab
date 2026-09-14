@@ -13,6 +13,9 @@ end-to-end.
 - [docs/gitea-setup.md](docs/gitea-setup.md) — local Gitea (git server +
   built-in container registry) running on the host, plus the containerd
   `certs.d` trust config so the cluster can pull from it
+- [docs/ingress-setup.md](docs/ingress-setup.md) — installing ingress-nginx
+  on a bare kubeadm/kubespray cluster (not shipped by default), NodePort
+  access, and how `Ingress` host routing works without real DNS
 - `docs/tekton-setup.md` — Tekton Pipelines install and pipeline definitions
   (coming soon)
 - `docs/argocd-setup.md` — Argo CD install and app-of-apps config (coming
@@ -25,9 +28,12 @@ end-to-end.
     happened installing Kubernetes on these VMs
   - [docs/my-lab/gitea-setup.md](docs/my-lab/gitea-setup.md) — Gitea's actual
     address, credentials location, and the registry consolidation done
+  - [docs/my-lab/hello-camel-service-deploy.md](docs/my-lab/hello-camel-service-deploy.md)
+    — building the image with Kaniko, deploying, and verifying Ingress access
 - [apps/java-app/](apps/java-app/) — `hello-camel-service`: Java 17 + Spring
-  Boot 4 + Apache Camel 4 REST API (`/api/hello`, `/api/version`), the
-  end-to-end deployment target for the pipeline below
+  Boot 4 + Apache Camel 4 REST API (`/api/hello`, `/api/version`), configured
+  via `GREETING_PREFIX`/`APP_ENVIRONMENT` env vars, deployed to the cluster
+  behind Ingress ([apps/java-app/k8s/](apps/java-app/k8s/))
 
 ## Topology
 

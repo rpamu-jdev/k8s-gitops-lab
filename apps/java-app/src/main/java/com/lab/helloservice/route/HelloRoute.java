@@ -22,6 +22,12 @@ public class HelloRoute extends RouteBuilder {
     @Value("${app.name}")
     private String appName;
 
+    @Value("${app.greeting-prefix}")
+    private String greetingPrefix;
+
+    @Value("${app.environment}")
+    private String environment;
+
     @Override
     public void configure() {
         restConfiguration()
@@ -46,7 +52,7 @@ public class HelloRoute extends RouteBuilder {
 
     private Map<String, String> helloBody(org.apache.camel.Exchange exchange) {
         Map<String, String> body = new LinkedHashMap<>();
-        body.put("message", "Hello from " + appName + "!");
+        body.put("message", greetingPrefix + " from " + appName + " (" + environment + ")!");
         return body;
     }
 
@@ -54,6 +60,7 @@ public class HelloRoute extends RouteBuilder {
         Map<String, String> body = new LinkedHashMap<>();
         body.put("name", appName);
         body.put("version", appVersion);
+        body.put("environment", environment);
         body.put("javaVersion", System.getProperty("java.version"));
         body.put("camelVersion", exchange.getContext().getVersion());
         return body;
