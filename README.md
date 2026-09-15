@@ -11,6 +11,76 @@ manifests Argo CD actually syncs from live in a **separate repo**,
 deliberately kept apart so nothing this repo's pipeline does can ever
 touch what Argo CD watches.
 
+## What's built here
+
+Everything below runs today, verified end to end, not just individually:
+
+- **Infra**: 2 KVM/libvirt VMs (`k8s-master`, `k8s-node`), a kubeadm
+  cluster via kubespray, Calico CNI, Traefik as the sole ingress path
+  (`hostNetwork`, no `NodePort` anywhere — every service reachable by
+  hostname, not a port number)
+- **Git + registry**: self-hosted Gitea on the host itself, doubling as
+  the container registry every build pushes to and every pod pulls from
+- **CI**: Tekton Pipelines + Triggers — a single generic, app-agnostic
+  `Pipeline` (no app name baked in) that clones, builds with Kaniko, and
+  pushes an image, triggered **only by a tag push**, using the tag itself
+  as the image version. Deliberately build+push only — it never touches
+  the cluster. A persistent `.m2` cache halves repeat build times.
+- **CD**: Argo CD watches a **separate** manifests-only repo
+  ([k8s-gitops-manifests](http://10.137.160.1:3000/rpamu/k8s-gitops-manifests))
+  and auto-syncs (`prune`+`selfHeal`) — no `kubectl apply` in the loop.
+  **Argo CD Image Updater** closes the last gap: it watches the registry
+  itself and commits the new tag into that repo the moment Tekton pushes
+  it, so nothing needs deploying by hand or picked in a UI.
+- **Observability**: Tekton Dashboard and Kubernetes Dashboard (read-only
+  login, not `cluster-admin`), each on its own hostname via Traefik
+
+### End-to-end release flow
+
+The entire release process, start to finish, is two commands:
+
+```bash
+git tag 1.4.0
+git push gitea 1.4.0
+```
+
+What happens next, unattended:
+
+```
+ k8s-gitops-lab (this repo)                 Gitea registry
+ ┌────────────────────────┐   webhook       ┌────────────────┐
+ │ git tag + push          │ ─────────────▶  │ Tekton builds  │
+ │                         │                 │ + pushes image │
+ └────────────────────────┘                 └───────┬────────┘
+                                                      │ polled
+                                                      ▼
+                                          ┌────────────────────────┐
+                                          │ Argo CD Image Updater   │
+                                          │ sees new semver tag,    │
+                                          │ commits + pushes bump   │
+                                          └───────────┬─────────────┘
+                                                      │
+                                                      ▼
+                          k8s-gitops-manifests (separate repo)
+                                                      │ synced
+                                                      ▼
+                                          ┌────────────────────────┐
+                                          │ Argo CD auto-syncs      │
+                                          │ (prune + selfHeal)      │
+                                          └───────────┬─────────────┘
+                                                      │
+                                                      ▼
+                                    Deployment rolls out on k8s-node,
+                                    gated by a startupProbe (tolerant of
+                                    slow JVM boot under node contention),
+                                    reachable at api.staging.test/sample/*
+                                    via Traefik
+```
+
+Verified for real (not staged) with two live tag-push releases — see
+[docs/my-lab/argocd-setup.md](docs/my-lab/argocd-setup.md) and
+[docs/my-lab/hello-camel-service-deploy.md](docs/my-lab/hello-camel-service-deploy.md).
+
 ## Contents
 
 - [docs/vm-setup.md](docs/vm-setup.md) — generic libvirt/KVM host setup,
@@ -57,8 +127,9 @@ touch what Argo CD watches.
   - [docs/my-lab/gitea-setup.md](docs/my-lab/gitea-setup.md) — Gitea's actual
     address, credentials location, and the registry consolidation done
   - [docs/my-lab/hello-camel-service-deploy.md](docs/my-lab/hello-camel-service-deploy.md)
-    — building the image with Kaniko, deploying, and verifying IngressRoute
-    access
+    — building the image with Kaniko, deploying, verifying IngressRoute
+    access, and the `startupProbe` fix for JVM-boot flakiness under node
+    contention
   - [docs/my-lab/tekton-setup.md](docs/my-lab/tekton-setup.md) — Tekton
     install, the source-from-Gitea decision, the switch to a generic
     build+push-only pipeline triggered by tag pushes, and the real bugs
@@ -69,7 +140,8 @@ touch what Argo CD watches.
   - [docs/my-lab/argocd-setup.md](docs/my-lab/argocd-setup.md) — Argo CD
     install, the `hello-camel-service` `Application`, splitting manifests
     into their own repo, Image Updater setup, and a full real test
-    (`git tag && git push` alone deploying a new version end to end)
+    (`git tag && git push` alone deploying a new version end to end,
+    repeated after the probe fix below to confirm both together)
 - [apps/java-app/](apps/java-app/) — `hello-camel-service`: Java 17 + Spring
   Boot 4 + Apache Camel 4 REST API (`/sample/api/hello`, `/sample/api/version`),
   configured via `GREETING_PREFIX`/`APP_ENVIRONMENT` env vars, reachable

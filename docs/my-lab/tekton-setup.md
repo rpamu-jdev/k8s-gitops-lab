@@ -176,8 +176,9 @@ widened probes held up cleanly (no crash loop, `0` restarts).
 The pipeline above (`hello-camel-service-build-deploy`) built, pushed,
 *and* deployed on every push to `main`. Changed to match how this lab
 actually wants to work: **Tekton builds and pushes only; deployment is a
-separate concern** (Argo CD eventually, manual `kubectl` for now), and
-**a build only happens when a tag is pushed** — not on every ordinary
+separate concern** (Argo CD, set up later — see
+[argocd-setup.md](argocd-setup.md) — manual `kubectl` in the meantime),
+and **a build only happens when a tag is pushed** — not on every ordinary
 commit — with the image version coming from the tag itself.
 
 - **`Pipeline` renamed and genericized**: `hello-camel-service-build-deploy`
@@ -308,12 +309,16 @@ kubectl delete job prune-test-1
       triggering, verified end-to-end with a real tag push
 - [x] Tekton Dashboard installed, reachable at `tekton.staging.test` (see
       [dashboards-setup.md](dashboards-setup.md))
-- [x] Probe timings widened to tolerate node-wide resource contention
+- [x] Probe timings widened to tolerate node-wide resource contention —
+      superseded by a `startupProbe`-based fix once the earlier fixed
+      delays started flaking again under heavier contention; see
+      [hello-camel-service-deploy.md](hello-camel-service-deploy.md)
 - [x] Daily pruning CronJob for old PipelineRuns, keeping the last 5
 - [x] Persistent `~/.m2` cache for Maven builds (see
       [tekton-setup.md](../tekton-setup.md) and above) — verified via a
       much faster second build with the same `pom.xml`
-- [x] Argo CD deploys `hello-camel-service` automatically from git — see
-      [argocd-setup.md](argocd-setup.md). The image-tag bump from a
-      Tekton build isn't yet wired into a committed manifest change, so
-      that hop is still manual
+- [x] Argo CD deploys `hello-camel-service` automatically from git, and
+      Argo CD Image Updater closes the last gap — a Tekton-pushed tag
+      gets committed as an image-tag bump automatically, no manual step
+      anywhere from `git tag` to a running pod; see
+      [argocd-setup.md](argocd-setup.md)

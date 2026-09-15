@@ -165,8 +165,9 @@ someone's terminal, is the source of truth.
 
 ## 7. Auto-bump the image tag: Argo CD Image Updater
 
-Without this, step 2 below is a manual edit. With it, the entire chain
-from `git tag` to a running pod is unattended.
+Without this, bumping the image tag after a Tekton build is a manual git
+edit (see "Day-to-day flow" below). With this set up instead, the entire
+chain from `git tag` to a running pod is unattended.
 
 Image Updater patches an image reference through Argo CD's
 Kustomize/Helm parameter mechanism — a plain manifest directory (no

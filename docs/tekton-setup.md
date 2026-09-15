@@ -6,9 +6,11 @@ manual builds earlier) and a self-hosted git server (Gitea) as the source.
 
 **Tekton's job here stops at pushing the image.** It does not deploy
 anything — no `kubectl set image`, no touching a `Deployment`. Deployment
-is a separate concern (Argo CD, or manual `kubectl apply`, for now). This
-keeps the boundary clean: Tekton = CI (build/test/push an artifact),
-something else = CD (get that artifact running).
+is Argo CD's job (see [argocd-setup.md](argocd-setup.md)) — specifically
+Argo CD Image Updater, which watches the registry this pipeline pushes to
+and deploys the new tag automatically. This keeps the boundary clean:
+Tekton = CI (build/test/push an artifact), Argo CD = CD (get that
+artifact running).
 
 The `Pipeline`/`Task`s are **generic across every Java app in the repo** —
 nothing in them names a specific app. Which repo, which subdirectory, and
@@ -492,22 +494,27 @@ kubectl delete job prune-test-1
 ## Notes / limitations
 
 - **Build+push only, deliberately.** No `deploy` step in the `Pipeline` —
-  getting a newly-pushed image actually running is a separate concern
-  (Argo CD, eventually; manual `kubectl` for now).
+  getting a newly-pushed image actually running is Argo CD's job (see
+  [argocd-setup.md](argocd-setup.md)), specifically Argo CD Image
+  Updater, which watches the registry this pipeline pushes to and
+  deploys automatically. Tekton itself never touches the cluster.
 - No webhook signature verification — Tekton Triggers ships interceptors
   for GitHub/GitLab/Bitbucket/Slack signature schemes, but not Gitea's.
   Filtering here is by event type + ref shape only (via the `cel`
   interceptor), which is acceptable when the webhook endpoint is reachable
   only from a private network, not the open internet.
-- The build context is fetched fresh every run (`--depth 1` shallow
-  clone) — no build caching between runs beyond what's already resident
-  in each ephemeral build pod's own layers (none, since each `TaskRun`
-  gets a fresh Kaniko pod).
+- The build context (source code) is fetched fresh every run (`--depth 1`
+  shallow clone) — each `TaskRun` gets a fresh Kaniko pod, so there's no
+  Docker layer cache between runs. Dependency downloads specifically
+  *are* cached across runs though, via a persistent `~/.m2` PVC — see
+  "Speeding up Maven builds" above.
 - **Health-probe timings that worked on a freshly-installed cluster can
   stop working as more workloads share the same node.** An app that
-  started in ~6s when it was the only thing running can take 40s+ once
-  Traefik, dashboards, Tekton's controllers, and Triggers are all
-  competing for the same CPU/memory — tight `livenessProbe` windows tuned
-  against the earlier number will crash-loop a perfectly fine app. Give
-  probes real margin rather than the tightest number that happened to work
-  once.
+  started in ~6s when it was the only thing running grew to 40s+, then
+  94-108s, as Traefik, dashboards, Tekton, Triggers, Argo CD, and Image
+  Updater all piled onto the same node. A fixed `initialDelaySeconds`
+  tuned against an earlier number eventually crash-loops a perfectly
+  fine app. The durable fix is a `startupProbe` (gates liveness/readiness
+  until the app is actually up, with real tolerance) rather than
+  chasing a bigger fixed delay each time — see
+  [my-lab/hello-camel-service-deploy.md](my-lab/hello-camel-service-deploy.md).

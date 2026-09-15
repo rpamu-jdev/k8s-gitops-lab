@@ -89,9 +89,9 @@ recurring thing.
 
 ## End-to-end GitOps test
 
-Edited [../../apps/java-app/k8s/configmap.yaml](../../apps/java-app/k8s/configmap.yaml),
-`GREETING_PREFIX: "Hello"` → `"Namaste"`, committed, pushed to `gitea`
-`main` — **no `kubectl apply` at all**:
+Edited `apps/java-app/k8s/configmap.yaml` (in this repo, at the time —
+since moved, see below), `GREETING_PREFIX: "Hello"` → `"Namaste"`,
+committed, pushed to `gitea` `main` — **no `kubectl apply` at all**:
 
 ```bash
 git commit -am "Test Argo CD auto-sync: bump greeting prefix via ConfigMap"
@@ -309,9 +309,11 @@ Watched it happen unattended:
 
 Also visible in the Argo CD UI mid-rollout: a brief run of
 `Unhealthy`/liveness-probe-failed events on the new pod (same
-slow-startup-under-node-load symptom documented in
-[hello-camel-service-deploy.md](hello-camel-service-deploy.md) —
-transient, not a real failure) before settling to `Healthy`.
+slow-startup-under-node-load symptom as before — transient, not a real
+failure) before settling to `Healthy`. **Since fixed** with a
+`startupProbe` — see [hello-camel-service-deploy.md](hello-camel-service-deploy.md),
+which also records a second full release test (`1.3.0`) confirming zero
+such events after the fix.
 
 **End result: `git tag 1.2.0 && git push gitea 1.2.0` is now the entire
 release process.** No manual manifest edit, no `kubectl apply`, no

@@ -78,8 +78,12 @@ Deploys via **Argo CD**, not `kubectl apply` — an `Application` (see
 repo's directory and syncs any committed change straight to the cluster
 (`prune`+`selfHeal` both on, so deleting a manifest there deletes the
 object too, and a manual `kubectl edit` against a tracked resource gets
-reverted). The `IngressRoute` requires the Traefik controller (installed
-as a standard part of cluster setup — see
+reverted). Argo CD Image Updater closes the loop the rest of the way — it
+watches the registry, and the moment Tekton pushes a new tag, commits the
+bump into the manifests repo itself. Net effect: `git tag <version> &&
+git push` on this repo is the entire release process, nothing to deploy
+by hand. The `IngressRoute` requires the Traefik controller (installed as
+a standard part of cluster setup — see
 [../../docs/k8s-setup.md](../../docs/k8s-setup.md)). See
 [../../docs/argocd-setup.md](../../docs/argocd-setup.md) for the full
 Argo CD writeup.
