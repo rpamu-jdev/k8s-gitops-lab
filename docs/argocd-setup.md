@@ -163,13 +163,111 @@ tracked resource gets reverted back to what git says on the next
 reconcile — deliberate, since the whole point is that git, not
 someone's terminal, is the source of truth.
 
+## 7. Auto-bump the image tag: Argo CD Image Updater
+
+Without this, step 2 below is a manual edit. With it, the entire chain
+from `git tag` to a running pod is unattended.
+
+Image Updater patches an image reference through Argo CD's
+Kustomize/Helm parameter mechanism — a plain manifest directory (no
+`kustomization.yaml`/`Chart.yaml`) has no such hook, so the app's
+manifest directory needs at least a minimal Kustomize base first:
+
+```yaml
+# apps/<app-name>/kustomization.yaml, in the manifests repo
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingressroute.yaml
+images:
+  - name: <registry>/<user>/<app-name>
+    newTag: <whatever's currently deployed>
+```
+
+No overlays needed for a single-environment lab — this is purely to give
+Argo CD a parameter surface to patch.
+
+Install (pin a version):
+
+```bash
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v0.15.1/manifests/install.yaml
+```
+
+Point it at the registry — Gitea's registry is plain HTTP, so it needs
+`insecure: true`, and a `pullsecret` reference for private-repo auth (the
+same `dockerconfigjson` Secret used for image pulls, duplicated into the
+`argocd` namespace since Image Updater's RBAC only covers secrets there):
+
+```bash
+kubectl -n argocd create secret generic gitea-registry-creds \
+  --type=kubernetes.io/dockerconfigjson \
+  --from-literal=.dockerconfigjson='<same content as the pull secret>'
+
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-image-updater-config
+  namespace: argocd
+data:
+  registries.conf: |
+    registries:
+      - name: gitea
+        api_url: http://<gitea-host>:3000
+        prefix: <gitea-host>:3000
+        ping: false
+        insecure: true
+        credentials: pullsecret:argocd/gitea-registry-creds
+EOF
+
+kubectl -n argocd rollout restart deployment argocd-image-updater
+```
+
+Then annotate the `Application` itself — no separate config file per app,
+it all lives on the resource:
+
+```yaml
+metadata:
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: <alias>=<registry>/<user>/<app-name>
+    argocd-image-updater.argoproj.io/<alias>.update-strategy: semver
+    argocd-image-updater.argoproj.io/<alias>.allow-tags: "regexp:^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    argocd-image-updater.argoproj.io/write-back-method: git
+```
+
+`update-strategy: semver` picks the highest valid-semver tag seen in the
+registry; `allow-tags` restricts it to tags that actually look like a
+release version (so a Tekton-pushed dev/SHA-tagged image, or `latest`,
+never gets picked up by accident). `write-back-method: git` is what makes
+this GitOps-correct — Image Updater doesn't call `kubectl set image`
+against the live cluster; it commits the new tag back to the **manifests
+repo**, and Argo CD's normal sync (not Image Updater) is what actually
+deploys it.
+
+No separate git credentials to configure: Image Updater reuses the same
+repository `Secret` already registered with Argo CD for that repo (step
+5). On a new tag, it writes (or updates) an
+`.argocd-source-<app-name>.yaml` file next to the manifests — a
+parameter-override file Argo CD's Kustomize renderer applies
+automatically on top of the base `kustomization.yaml`, so the base file
+itself is left untouched.
+
+Poll interval is 2 minutes by default (`--interval`, tunable on the
+`argocd-image-updater` Deployment's args).
+
 ## Day-to-day flow
 
 1. Tekton builds+pushes an image on a tag push (see
    [tekton-setup.md](tekton-setup.md)) — in the app's **source** repo.
-2. In the **manifests** repo, edit that app's `deployment.yaml` to point
-   at the new tag (or change any other manifest field), commit, push.
-3. Argo CD picks up the change on its next poll (default: **3 minutes**)
+2. Argo CD Image Updater's next poll cycle sees the new tag, decides it's
+   the new highest semver match, and commits/pushes a parameter override
+   to the **manifests** repo — no manual edit needed if this is set up
+   (see step 7 above); otherwise, edit the app's manifest to point at the
+   new tag, commit, push, by hand.
+3. Argo CD picks up that commit on its next poll (default: **3 minutes**)
    and reconciles the cluster to match. To see it immediately instead of
    waiting:
    ```bash
@@ -179,4 +277,6 @@ someone's terminal, is the source of truth.
 4. Watch it land: `kubectl -n argocd get application <app-name> -w`, or
    the Argo CD UI.
 
-No manual `kubectl apply` step remains anywhere in this flow.
+No manual `kubectl apply` step remains anywhere in this flow, and with
+Image Updater running, no manual git edit either — `git tag && git push`
+on the source repo is the entire release process end to end.

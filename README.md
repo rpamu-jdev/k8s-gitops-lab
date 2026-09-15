@@ -37,9 +37,10 @@ touch what Argo CD watches.
 - [infra/dashboards/](infra/dashboards/) — the RBAC and IngressRoute
   manifests for both dashboards
 - [docs/argocd-setup.md](docs/argocd-setup.md) — Argo CD install, serving
-  plain HTTP behind Traefik, Gitea repo credentials, and the generic
+  plain HTTP behind Traefik, Gitea repo credentials, the generic
   `Application` shape (one per app, `syncPolicy.automated` with
-  `prune`+`selfHeal`)
+  `prune`+`selfHeal`), and Argo CD Image Updater so a Tekton-pushed tag
+  gets deployed with no manual git edit
 - [infra/argocd/](infra/argocd/) — Argo CD's own routing (`IngressRoute`
   for its UI at `argocd.staging.test`)
 - [ci/argocd/](ci/argocd/) — the `Application` manifest that deploys
@@ -66,8 +67,9 @@ touch what Argo CD watches.
     both dashboards' actual hostnames, the read-only login token, and why
     hostnames instead of the app-style path convention here
   - [docs/my-lab/argocd-setup.md](docs/my-lab/argocd-setup.md) — Argo CD
-    install, the `hello-camel-service` `Application`, and a verified
-    end-to-end GitOps test (git push → auto-sync → live cluster change)
+    install, the `hello-camel-service` `Application`, splitting manifests
+    into their own repo, Image Updater setup, and a full real test
+    (`git tag && git push` alone deploying a new version end to end)
 - [apps/java-app/](apps/java-app/) — `hello-camel-service`: Java 17 + Spring
   Boot 4 + Apache Camel 4 REST API (`/sample/api/hello`, `/sample/api/version`),
   configured via `GREETING_PREFIX`/`APP_ENVIRONMENT` env vars, reachable

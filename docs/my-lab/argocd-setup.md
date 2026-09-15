@@ -212,6 +212,114 @@ Verified the new password logs in via `argocd login
 argocd-server.argocd.svc.cluster.local:80 --plaintext`. New password
 handed to the lab owner directly, not stored in this repo.
 
+## Closing the loop: Argo CD Image Updater
+
+Up to this point, deploying a newly-built image tag still meant manually
+editing `deployment.yaml` in the manifests repo — the last gap between
+"Tekton pushed an image" and "it's actually running." Installed
+[Argo CD Image Updater](../argocd-setup.md) (`v0.15.1`) to remove that
+step entirely.
+
+First added a minimal `kustomization.yaml` to
+`apps/hello-camel-service/` in `k8s-gitops-manifests` (see
+[../argocd-setup.md](../argocd-setup.md) for why this is the mechanism
+Image Updater needs) — pushed, then force-refreshed the `Application` and
+confirmed Argo CD auto-detected it as a Kustomize source and stayed
+`Synced`/`Healthy` with zero disruption (same image tag, just a different
+render path).
+
+Installed Image Updater:
+```bash
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v0.15.1/manifests/install.yaml
+```
+
+Configured it to reach Gitea's registry — plain HTTP, so `insecure: true`
+was required, and its RBAC only reads Secrets in the `argocd` namespace,
+so the existing `default`-namespace `gitea-registry-creds`
+`dockerconfigjson` Secret needed a duplicate in `argocd` too:
+
+```bash
+kubectl -n argocd create secret generic gitea-registry-creds \
+  --type=kubernetes.io/dockerconfigjson \
+  --from-literal=.dockerconfigjson='<same content as the default-namespace one>'
+```
+```yaml
+# argocd-image-updater-config ConfigMap, registries.conf key
+registries:
+  - name: gitea
+    api_url: http://10.137.160.1:3000
+    prefix: 10.137.160.1:3000
+    ping: false
+    insecure: true
+    credentials: pullsecret:argocd/gitea-registry-creds
+```
+
+Annotated the `Application` (see
+[../../ci/argocd/application-hello-camel-service.yaml](../../ci/argocd/application-hello-camel-service.yaml)):
+`image-list: hcs=10.137.160.1:3000/rpamu/hello-camel-service`,
+`hcs.update-strategy: semver`,
+`hcs.allow-tags: regexp:^[0-9]+\.[0-9]+\.[0-9]+$` (so it only ever picks
+up genuine release-looking tags, never a stray SHA or `latest`), and
+`write-back-method: git`.
+
+**Worked on the very first poll cycle, no extra fixing needed** — within
+2 minutes of annotating, the log showed:
+```
+Setting new image to 10.137.160.1:3000/rpamu/hello-camel-service:1.1.1
+Committing 1 parameter update(s) for application hello-camel-service
+git push origin main
+Successfully updated the live application spec
+```
+It found `1.1.1` (an image already sitting in the registry from earlier
+webhook testing) as the highest semver tag, and wrote
+`apps/hello-camel-service/.argocd-source-hello-camel-service.yaml`
+(a parameter-override file Argo CD's Kustomize renderer layers on top of
+the base `kustomization.yaml` automatically — the base file itself was
+never touched) into `k8s-gitops-manifests`, committed and pushed as
+`argocd-image-updater <noreply@argoproj.io>`. A forced Argo CD refresh
+picked that commit up and rolled the Deployment to `1.1.1`.
+
+### Full real end-to-end test
+
+To prove the *entire* chain — not just Image Updater's half — ran a real
+release with nothing but a tag push:
+
+```bash
+git tag 1.2.0
+git push gitea 1.2.0
+```
+
+Watched it happen unattended:
+1. Gitea webhook fired the Tekton `EventListener` (same tag-push trigger
+   from [tekton-setup.md](tekton-setup.md)) — a `PipelineRun` started
+   within seconds, and finished `Succeeded` with `1.2.0` pushed to the
+   registry.
+2. Argo CD Image Updater's next poll cycle picked up `1.2.0` (now the
+   highest semver tag), committed the override to `k8s-gitops-manifests`.
+3. Forced an Argo CD refresh (would otherwise happen automatically within
+   the ~3-minute poll) — synced, rolled the Deployment.
+4. Confirmed live:
+   ```bash
+   kubectl get pod -l app=hello-camel-service \
+     -o jsonpath='{.items[0].spec.containers[0].image}'
+   # -> 10.137.160.1:3000/rpamu/hello-camel-service:1.2.0
+   curl -H "Host: api.staging.test" http://10.137.160.148/sample/api/hello
+   # -> {"message": "Namaste from hello-camel-service (k8s-lab)!"}
+   ```
+
+Also visible in the Argo CD UI mid-rollout: a brief run of
+`Unhealthy`/liveness-probe-failed events on the new pod (same
+slow-startup-under-node-load symptom documented in
+[hello-camel-service-deploy.md](hello-camel-service-deploy.md) —
+transient, not a real failure) before settling to `Healthy`.
+
+**End result: `git tag 1.2.0 && git push gitea 1.2.0` is now the entire
+release process.** No manual manifest edit, no `kubectl apply`, no
+picking an image in the Argo CD UI (which isn't a workflow Argo CD
+supports anyway — it has no "browse the registry and deploy this one"
+UI; the only correct way to change what's deployed is still a git
+commit, which is exactly what Image Updater automates).
+
 ## Status
 
 - [x] Argo CD installed (`v2.13.2`), all core components healthy
@@ -228,7 +336,10 @@ handed to the lab owner directly, not stored in this repo.
 - [x] Deploy manifests split into their own repo
       (`k8s-gitops-manifests`), separate from source/CI — `Application`
       repointed, verified `Synced`/`Healthy` with no disruption
-- [ ] No `Application` yet points at a bumped **image tag** end-to-end
-      (the ConfigMap test proved the sync mechanism; the next real release
-      should also bump `deployment.yaml`'s image tag in the manifests repo
-      to close the loop with Tekton's tag-triggered builds)
+- [x] Argo CD Image Updater installed and wired up (`semver` strategy,
+      `git` write-back) — the image-tag bump into `deployment.yaml`'s
+      effective value is now automatic
+- [x] Full release loop verified for real: `git tag && git push` alone
+      (no manual deploy step of any kind) took a new version from source
+      to running pod — Tekton build → registry → Image Updater commit →
+      Argo CD sync, unattended end to end

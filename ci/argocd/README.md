@@ -28,8 +28,17 @@ A second Java app would get its own `Application` manifest here, pointing
 `k8s-gitops-manifests` — nothing in Argo CD's own install (see
 [../../infra/argocd/](../../infra/argocd/)) needs to change.
 
+This `Application`'s annotations also drive **Argo CD Image Updater**
+(see [../../docs/argocd-setup.md](../../docs/argocd-setup.md)) — it
+watches the registry, and on a new semver-looking tag, commits an image
+override straight to `k8s-gitops-manifests` itself. Combined with
+Tekton's tag-triggered builds, `git tag <version> && git push <remote>
+<version>` on this repo is the entire release process: nothing to edit
+by hand, nothing to pick in the Argo CD UI.
+
 ## Files
 
 - `application-hello-camel-service.yaml` — Argo CD `Application` tracking
   `apps/hello-camel-service/` in the `k8s-gitops-manifests` repo,
-  auto-sync with `prune`+`selfHeal` both on
+  auto-sync with `prune`+`selfHeal` both on, annotated for Image Updater
+  (`update-strategy: semver`, `write-back-method: git`)

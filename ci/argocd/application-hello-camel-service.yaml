@@ -3,6 +3,17 @@ kind: Application
 metadata:
   name: hello-camel-service
   namespace: argocd
+  annotations:
+    # Argo CD Image Updater: watches this image in the registry, and on a
+    # new tag matching allow-tags, patches apps/hello-camel-service's
+    # kustomization.yaml (images.newTag) and commits+pushes that to
+    # k8s-gitops-manifests itself - Argo CD's normal auto-sync then picks
+    # up that commit like any other. "hcs" is just this annotation set's
+    # local alias for the image, referenced by the two annotations below.
+    argocd-image-updater.argoproj.io/image-list: hcs=10.137.160.1:3000/rpamu/hello-camel-service
+    argocd-image-updater.argoproj.io/hcs.update-strategy: semver
+    argocd-image-updater.argoproj.io/hcs.allow-tags: "regexp:^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    argocd-image-updater.argoproj.io/write-back-method: git
 spec:
   project: default
   source:
