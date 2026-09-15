@@ -2,11 +2,18 @@
 
 Argo CD is the CD half of this lab's pipeline: Tekton (see
 [tekton-setup.md](tekton-setup.md)) builds and pushes an image on a tag
-push and stops there — it does not touch the cluster. Argo CD watches this
+push and stops there — it does not touch the cluster. Argo CD watches a
 git repo and keeps the cluster's live state in sync with whatever's
-committed under an app's `k8s/` manifests. Bumping a deployment (image
+committed under an app's manifest directory. Bumping a deployment (image
 tag, env var, replica count, whatever) is a **git commit**, not a
 `kubectl apply`.
+
+**Deliberately a separate repo from application source.** Argo CD's
+`Application` points at a dedicated manifests repo, not the app's own
+source/CI repo — so a commit Tekton's pipeline makes (if it ever makes
+one) can never be the same commit Argo CD syncs from, and the two
+concerns (build vs. deploy) stay genuinely decoupled rather than just
+conventionally separated by directory.
 
 ## 1. Install
 
@@ -87,10 +94,19 @@ kubectl -n argocd patch secret argocd-secret -p \
 kubectl -n argocd delete secret argocd-initial-admin-secret
 ```
 
-## 5. Give Argo CD read access to the git repo
+## 5. Create the manifests repo and give Argo CD read access
+
+A separate git repo, holding only deploy manifests, one directory per
+app:
+
+```
+apps/<app-name>/*.yaml
+```
 
 A private Gitea repo needs credentials, added as a `Secret` labeled for
-Argo CD to pick it up as a repository — **not committed to git**:
+Argo CD to pick it up as a repository — **not committed to git**. This is
+per-repo, so a repo for source/CI and a repo for manifests each need
+their own such `Secret` if both are private:
 
 ```bash
 kubectl apply -f - <<'EOF'
@@ -111,9 +127,10 @@ EOF
 
 ## 6. Define an Application
 
-One `Application` per deployable unit, pointing at that app's `k8s/`
-manifest directory. Nothing app-specific belongs in Argo CD's own install —
-it all lives in this one small resource:
+One `Application` per deployable unit, pointing `repoURL` at the
+**manifests repo** (not the app's source repo) and `path` at that app's
+directory within it. Nothing app-specific belongs in Argo CD's own
+install — it all lives in this one small resource:
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -124,9 +141,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: http://<gitea-host>:3000/<user>/<repo>.git
+    repoURL: http://<gitea-host>:3000/<user>/<manifests-repo>.git
     targetRevision: main
-    path: apps/<app-name>/k8s
+    path: apps/<app-name>
   destination:
     server: https://kubernetes.default.svc
     namespace: default
@@ -138,8 +155,8 @@ spec:
       - CreateNamespace=false
 ```
 
-`automated.prune: true` means removing a manifest from `k8s/` and pushing
-deletes the corresponding cluster object too — Argo CD treats the git
+`automated.prune: true` means removing a manifest from the app's
+directory and pushing deletes the corresponding cluster object too — Argo CD treats the git
 directory as the full desired state, not just an overlay of additions.
 `selfHeal: true` means a manual `kubectl edit`/`kubectl delete` against a
 tracked resource gets reverted back to what git says on the next
@@ -149,9 +166,9 @@ someone's terminal, is the source of truth.
 ## Day-to-day flow
 
 1. Tekton builds+pushes an image on a tag push (see
-   [tekton-setup.md](tekton-setup.md)).
-2. Edit the app's `k8s/deployment.yaml` to point at the new tag (or change
-   any other manifest field), commit, push.
+   [tekton-setup.md](tekton-setup.md)) — in the app's **source** repo.
+2. In the **manifests** repo, edit that app's `deployment.yaml` to point
+   at the new tag (or change any other manifest field), commit, push.
 3. Argo CD picks up the change on its next poll (default: **3 minutes**)
    and reconciles the cluster to match. To see it immediately instead of
    waiting:

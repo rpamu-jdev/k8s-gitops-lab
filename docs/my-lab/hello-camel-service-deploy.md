@@ -55,8 +55,9 @@ curl -H "Authorization: token <token>" http://10.137.160.1:3000/api/v1/packages/
 
 ## Deploy
 
-Manifests in [../../apps/java-app/k8s/](../../apps/java-app/k8s/), applied
-directly (no Argo CD yet):
+Manifests in `apps/java-app/k8s/` (at the time — since moved to the
+separate `k8s-gitops-manifests` repo, see [argocd-setup.md](argocd-setup.md)),
+applied directly (no Argo CD yet):
 
 ```bash
 kubectl apply -f configmap.yaml -f deployment.yaml -f service.yaml -f ingressroute.yaml
@@ -173,5 +174,6 @@ curl -H "Host: api.staging.test" http://10.137.160.148/sample/api/hello
       Tekton does not deploy anything here
 - [x] Deploy automated via Argo CD instead of manual `kubectl apply`/
       `kubectl set image` — see [argocd-setup.md](argocd-setup.md). A
-      change to anything under [k8s/](../../apps/java-app/k8s/) now reaches
-      the cluster via `git push`, auto-synced (`prune`+`selfHeal`)
+      change to a manifest in the separate `k8s-gitops-manifests` repo
+      (`apps/hello-camel-service/`) now reaches the cluster via `git push`,
+      auto-synced (`prune`+`selfHeal`)

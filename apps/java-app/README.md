@@ -10,11 +10,14 @@ Tekton pipeline + Argo CD setup.
   - `GET /sample/api/hello` → `{"message": "<prefix> from <name> (<environment>)!"}`
   - `GET /sample/api/version` → `{"name", "version", "environment", "javaVersion", "camelVersion"}`
   - `GET /actuator/health` → Spring Boot Actuator health (liveness/readiness
-    probes split, wired as k8s probes — see [k8s/](k8s/))
+    probes split, wired as k8s probes — see the deploy manifests, now in
+    the separate [k8s-gitops-manifests](http://10.137.160.1:3000/rpamu/k8s-gitops-manifests)
+    repo)
 - **Config via env vars** (all optional, sensible defaults if unset):
   - `GREETING_PREFIX` — default `Hello`
   - `APP_ENVIRONMENT` — default `local`; set to e.g. `k8s-lab` via the
-    Kubernetes `ConfigMap` in [k8s/configmap.yaml](k8s/configmap.yaml)
+    Kubernetes `ConfigMap` in `k8s-gitops-manifests`'s
+    `apps/hello-camel-service/configmap.yaml`
   - `BASE_PATH` — default `/sample/api`; the app owns this full path
     itself rather than having a prefix stripped by the ingress layer, so
     it must match whatever path the cluster's `IngressRoute` sends here
@@ -62,16 +65,23 @@ build instead. See [../../docs/tekton-setup.md](../../docs/tekton-setup.md).
 
 ## Deploy to Kubernetes
 
-See [k8s/](k8s/) for the manifests (ConfigMap, Deployment, Service,
-IngressRoute) and [k8s/README.md](k8s/README.md) for what each does.
+The Kubernetes manifests (ConfigMap, Deployment, Service, IngressRoute)
+live in a **separate repo**,
+[k8s-gitops-manifests](http://10.137.160.1:3000/rpamu/k8s-gitops-manifests)
+(`apps/hello-camel-service/`) — not here alongside the source, and not in
+`k8s-gitops-lab` at all. This keeps Tekton's build/push repo (this one)
+cleanly separate from the repo Argo CD actually watches for deploys, so a
+CI-triggered commit here can never touch what Argo CD syncs.
+
 Deploys via **Argo CD**, not `kubectl apply` — an `Application` (see
-[../../ci/argocd/](../../ci/argocd/)) watches this directory and syncs any
-committed change straight to the cluster (`prune`+`selfHeal` both on, so
-deleting a manifest here deletes the object too, and a manual
-`kubectl edit` against a tracked resource gets reverted). The
-`IngressRoute` requires the Traefik controller (installed as a standard
-part of cluster setup — see [../../docs/k8s-setup.md](../../docs/k8s-setup.md)).
-See [../../docs/argocd-setup.md](../../docs/argocd-setup.md) for the full
+[../../ci/argocd/](../../ci/argocd/) in this repo) watches that other
+repo's directory and syncs any committed change straight to the cluster
+(`prune`+`selfHeal` both on, so deleting a manifest there deletes the
+object too, and a manual `kubectl edit` against a tracked resource gets
+reverted). The `IngressRoute` requires the Traefik controller (installed
+as a standard part of cluster setup — see
+[../../docs/k8s-setup.md](../../docs/k8s-setup.md)). See
+[../../docs/argocd-setup.md](../../docs/argocd-setup.md) for the full
 Argo CD writeup.
 
 In the cluster, this app is reachable under `api.staging.test/sample/*` — a

@@ -130,6 +130,66 @@ curl -H "Host: api.staging.test" http://10.137.160.148/sample/api/hello
 Pushed the same commit to `origin` (GitHub) too, for parity — Argo CD only
 watches the `gitea` remote.
 
+## Splitting manifests into their own repo
+
+The above test lived in `k8s-gitops-lab` itself
+(`apps/java-app/k8s/`) — fine for a first working sync, but wrong
+long-term: Tekton's build/push pipeline and Argo CD's sync target were
+the same repo, so a future CI-side commit there could in principle race
+or interfere with what Argo CD watches. Moved the manifests out to a new
+repo, [k8s-gitops-manifests](http://10.137.160.1:3000/rpamu/k8s-gitops-manifests)
+(created via the Gitea UI, `rpamu/k8s-gitops-manifests`), laid out as
+`apps/hello-camel-service/*.yaml` — same four files
+(`configmap.yaml`/`deployment.yaml`/`service.yaml`/`ingressroute.yaml`),
+just relocated (and the `ConfigMap`'s comment referencing this repo's own
+`ci/argocd/` fixed, since that path doesn't resolve from the new repo).
+
+```bash
+# new repo pushed with git init/add/commit/push, same rpamu Gitea token
+git remote add origin http://rpamu:<token>@10.137.160.1:3000/rpamu/k8s-gitops-manifests.git
+git push -u origin main
+```
+
+Argo CD needed a **second** repository-credentials `Secret` (repo
+credentials are per exact URL, not shared across repos on the same
+host):
+
+```bash
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitea-k8s-gitops-manifests
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: git
+  url: http://10.137.160.1:3000/rpamu/k8s-gitops-manifests.git
+  username: rpamu
+  password: <token>
+EOF
+```
+
+Then updated the `Application`'s `source.repoURL`/`source.path` to point
+at the new repo/directory (see
+[../../ci/argocd/application-hello-camel-service.yaml](../../ci/argocd/application-hello-camel-service.yaml)),
+`kubectl apply`'d it, forced a refresh, and confirmed `Synced`/`Healthy`
+against the new source with zero disruption to the running app (same
+manifests, same content, different repo — no rollout triggered this
+time, unlike the original adoption). App still answered correctly
+afterward:
+
+```bash
+curl -H "Host: api.staging.test" http://10.137.160.148/sample/api/hello
+# -> {"message": "Namaste from hello-camel-service (k8s-lab)!"}
+```
+
+The original `apps/java-app/k8s/` directory in `k8s-gitops-lab` was then
+deleted — a second Java app added later would get its own
+`apps/<app-name>/` directory in the manifests repo plus its own
+`Application`, following the same pattern.
+
 ## Rotating the admin password
 
 The `argocd-server` pod ships the `argocd` CLI itself, so no local install
@@ -158,13 +218,17 @@ handed to the lab owner directly, not stored in this repo.
 - [x] Served plain HTTP (`server.insecure`), routed through Traefik at
       `argocd.staging.test`, no port, matching every other hostname here
 - [x] Gitea repo credentials added as an Argo CD repository `Secret`
+      (one per repo: `k8s-gitops-lab` and `k8s-gitops-manifests`)
 - [x] `hello-camel-service` `Application` created, auto-sync
       (`prune`+`selfHeal`) on
 - [x] Verified true GitOps loop: git push → auto-sync → live cluster
       change, zero manual `kubectl apply`
 - [x] Admin password rotated off the auto-generated initial one, bootstrap
       secret deleted
+- [x] Deploy manifests split into their own repo
+      (`k8s-gitops-manifests`), separate from source/CI — `Application`
+      repointed, verified `Synced`/`Healthy` with no disruption
 - [ ] No `Application` yet points at a bumped **image tag** end-to-end
       (the ConfigMap test proved the sync mechanism; the next real release
-      should also bump `deployment.yaml`'s image tag to close the loop
-      with Tekton's tag-triggered builds)
+      should also bump `deployment.yaml`'s image tag in the manifests repo
+      to close the loop with Tekton's tag-triggered builds)

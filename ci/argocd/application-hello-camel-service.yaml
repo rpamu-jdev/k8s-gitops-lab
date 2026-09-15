@@ -6,9 +6,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: http://10.137.160.1:3000/rpamu/k8s-gitops-lab.git
+    repoURL: http://10.137.160.1:3000/rpamu/k8s-gitops-manifests.git
     targetRevision: main
-    path: apps/java-app/k8s
+    path: apps/hello-camel-service
   destination:
     server: https://kubernetes.default.svc
     namespace: default

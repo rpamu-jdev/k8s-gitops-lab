@@ -4,6 +4,13 @@ Personal homelab notes and configs for a 2-VM KVM/libvirt Kubernetes cluster,
 with Tekton for CI and Argo CD for GitOps CD, deploying a sample Java app
 end-to-end.
 
+**This is the source/CI repo** — application code, Dockerfile, and the
+Tekton pipeline that builds and pushes its image. The Kubernetes deploy
+manifests Argo CD actually syncs from live in a **separate repo**,
+[k8s-gitops-manifests](http://10.137.160.1:3000/rpamu/k8s-gitops-manifests),
+deliberately kept apart so nothing this repo's pipeline does can ever
+touch what Argo CD watches.
+
 ## Contents
 
 - [docs/vm-setup.md](docs/vm-setup.md) — generic libvirt/KVM host setup,
@@ -36,8 +43,10 @@ end-to-end.
 - [infra/argocd/](infra/argocd/) — Argo CD's own routing (`IngressRoute`
   for its UI at `argocd.staging.test`)
 - [ci/argocd/](ci/argocd/) — the `Application` manifest that deploys
-  `hello-camel-service` from [apps/java-app/k8s/](apps/java-app/k8s/) —
-  git push, not `kubectl apply`, is how this app gets deployed now
+  `hello-camel-service` from the separate
+  [k8s-gitops-manifests](http://10.137.160.1:3000/rpamu/k8s-gitops-manifests)
+  repo's `apps/hello-camel-service/` — git push (to that repo, not this
+  one), not `kubectl apply`, is how this app gets deployed now
 - [docs/my-lab/](docs/my-lab/) — this lab's actual concrete setup (real IPs,
   hostnames, MACs, file layout, gotchas hit, current status), one file per
   topic mirroring `docs/`
@@ -62,7 +71,8 @@ end-to-end.
 - [apps/java-app/](apps/java-app/) — `hello-camel-service`: Java 17 + Spring
   Boot 4 + Apache Camel 4 REST API (`/sample/api/hello`, `/sample/api/version`),
   configured via `GREETING_PREFIX`/`APP_ENVIRONMENT` env vars, reachable
-  in-cluster at `api.staging.test/sample/*` ([apps/java-app/k8s/](apps/java-app/k8s/))
+  in-cluster at `api.staging.test/sample/*` (deploy manifests are in the
+  separate `k8s-gitops-manifests` repo, not here — see `ci/argocd/`)
 
 ## Ingress convention
 
