@@ -72,6 +72,21 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
 Username `admin`. Rotate/delete `argocd-initial-admin-secret` once you've
 logged in and changed the password, per Argo CD's own docs.
 
+### Rotating the admin password without the CLI installed locally
+
+The `argocd-server` pod already bundles the `argocd` binary, so hash the
+new password inside the pod itself rather than installing the CLI
+anywhere:
+
+```bash
+kubectl -n argocd exec deploy/argocd-server -- argocd account bcrypt --password '<new-password>'
+
+kubectl -n argocd patch secret argocd-secret -p \
+  '{"stringData": {"admin.password": "<bcrypt-hash-from-above>", "admin.passwordMtime": "'"$(date -u +%FT%TZ)"'"}}'
+
+kubectl -n argocd delete secret argocd-initial-admin-secret
+```
+
 ## 5. Give Argo CD read access to the git repo
 
 A private Gitea repo needs credentials, added as a `Secret` labeled for

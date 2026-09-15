@@ -130,6 +130,28 @@ curl -H "Host: api.staging.test" http://10.137.160.148/sample/api/hello
 Pushed the same commit to `origin` (GitHub) too, for parity — Argo CD only
 watches the `gitea` remote.
 
+## Rotating the admin password
+
+The `argocd-server` pod ships the `argocd` CLI itself, so no local install
+or extra download was needed — hashed the new password inside the pod and
+patched the secret directly:
+
+```bash
+argocd account bcrypt --password '<new-password>'   # run via: kubectl -n argocd exec deploy/argocd-server -- argocd account bcrypt --password '<new-password>'
+
+kubectl -n argocd patch secret argocd-secret -p \
+  '{"stringData": {"admin.password": "<bcrypt-hash>", "admin.passwordMtime": "<RFC3339-timestamp>"}}'
+
+kubectl -n argocd delete secret argocd-initial-admin-secret
+```
+
+Deleting `argocd-initial-admin-secret` is Argo CD's own documented
+cleanup step once a real password is set — the bootstrap secret otherwise
+sticks around holding the old auto-generated password indefinitely.
+Verified the new password logs in via `argocd login
+argocd-server.argocd.svc.cluster.local:80 --plaintext`. New password
+handed to the lab owner directly, not stored in this repo.
+
 ## Status
 
 - [x] Argo CD installed (`v2.13.2`), all core components healthy
@@ -140,8 +162,8 @@ watches the `gitea` remote.
       (`prune`+`selfHeal`) on
 - [x] Verified true GitOps loop: git push → auto-sync → live cluster
       change, zero manual `kubectl apply`
-- [ ] Admin password still the auto-generated initial one — rotate before
-      treating this as anything beyond a lab
+- [x] Admin password rotated off the auto-generated initial one, bootstrap
+      secret deleted
 - [ ] No `Application` yet points at a bumped **image tag** end-to-end
       (the ConfigMap test proved the sync mechanism; the next real release
       should also bump `deployment.yaml`'s image tag to close the loop
