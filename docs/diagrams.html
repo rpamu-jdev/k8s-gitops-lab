@@ -1,0 +1,349 @@
+<title>k8s-gitops-lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#eef1f5; --panel:#ffffff; --panel-2:#f3f5f8; --line:#d7dce3;
+    --text:#1b212b; --text-dim:#5b6472;
+    --ci:#b5762a; --cd:#2b7d89; --ok:#2f8f5b;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12151b; --panel:#1a2028; --panel-2:#20272f; --line:#333c49;
+      --text:#e7eaf0; --text-dim:#8b93a3;
+      --ci:#e2a54d; --cd:#5fb8c4; --ok:#6ebf8b;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12151b; --panel:#1a2028; --panel-2:#20272f; --line:#333c49;
+    --text:#e7eaf0; --text-dim:#8b93a3;
+    --ci:#e2a54d; --cd:#5fb8c4; --ok:#6ebf8b;
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"IBM Plex Sans", system-ui, sans-serif;
+    line-height:1.55;
+  }
+  .wrap{ max-width:1180px; margin:0 auto; padding:48px 28px 96px; }
+
+  code, .mono{ font-family:"IBM Plex Mono", ui-monospace, monospace; }
+
+  header.page{ display:flex; flex-direction:column; gap:18px; margin-bottom:40px; }
+  .eyebrow{
+    font-family:"IBM Plex Mono", monospace; font-size:12.5px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--text-dim);
+  }
+  h1{
+    font-size:clamp(28px,4vw,40px); font-weight:700; margin:0;
+    text-wrap:balance; letter-spacing:-0.01em;
+  }
+  .lede{ max-width:64ch; color:var(--text-dim); font-size:16px; margin:0; }
+
+  nav.jump{ display:flex; gap:8px; font-family:"IBM Plex Mono",monospace; font-size:13px; }
+  nav.jump a{
+    color:var(--text); text-decoration:none; padding:7px 14px; border:1px solid var(--line);
+    border-radius:100px; background:var(--panel);
+  }
+  nav.jump a:hover, nav.jump a:focus-visible{ border-color:var(--text-dim); }
+
+  .stats{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:1px; background:var(--line); border:1px solid var(--line); border-radius:10px;
+    overflow:hidden; margin:36px 0 8px;
+  }
+  .stat{ background:var(--panel); padding:16px 18px; }
+  .stat .n{ font-family:"IBM Plex Mono",monospace; font-size:22px; font-weight:600; }
+  .stat .l{ font-size:12.5px; color:var(--text-dim); margin-top:2px; }
+
+  section.block{ margin-top:76px; scroll-margin-top:24px; }
+  section.block h2{
+    font-size:24px; font-weight:700; margin:0 0 6px; letter-spacing:-0.01em;
+  }
+  section.block .sub{ color:var(--text-dim); font-size:15px; max-width:70ch; margin:0 0 28px; }
+
+  .key{ display:flex; gap:18px; flex-wrap:wrap; font-size:13px; color:var(--text-dim); margin-bottom:18px; }
+  .key span{ display:inline-flex; align-items:center; gap:7px; }
+  .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
+
+  figure{ margin:0; }
+  .diagram-scroll{
+    overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--panel);
+    padding:20px;
+  }
+  .diagram-scroll svg{ display:block; }
+  #architecture-svg{ width:100%; min-width:920px; height:auto; }
+  #flow-svg{ width:100%; max-width:620px; height:auto; margin:0 auto; }
+  .flow-figure .diagram-scroll{ display:flex; justify-content:center; }
+
+  figcaption{ margin-top:14px; font-size:13.5px; color:var(--text-dim); max-width:75ch; }
+
+  .lbl{ font-family:"IBM Plex Mono",monospace; font-size:11.5px; fill:currentColor;
+    paint-order:stroke; stroke:var(--panel); stroke-width:6px; stroke-linejoin:round; }
+  .box-title{ font-family:"IBM Plex Sans",sans-serif; font-weight:600; font-size:13.5px; fill:var(--text); }
+  .box-sub{ font-family:"IBM Plex Mono",monospace; font-size:10.5px; fill:var(--text-dim); }
+  .region-label{ font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.06em; fill:var(--text-dim); text-transform:uppercase; }
+  .step-h{ font-family:"IBM Plex Sans",sans-serif; font-weight:600; font-size:15px; fill:var(--text); }
+  .step-d{ font-family:"IBM Plex Mono",monospace; font-size:11.5px; fill:var(--text-dim); }
+  .step-num{ font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:14px; fill:var(--bg); }
+
+  footer{ margin-top:80px; padding-top:24px; border-top:1px solid var(--line);
+    color:var(--text-dim); font-size:13px; }
+  footer a{ color:var(--text); }
+</style>
+
+<div class="wrap">
+
+  <header class="page">
+    <div class="eyebrow">k8s-gitops-lab &middot; reference diagrams</div>
+    <h1>Architecture &amp; release flow</h1>
+    <p class="lede">
+      A 2-VM homelab Kubernetes cluster with Tekton for CI and Argo CD for GitOps CD.
+      Two diagrams: the components as they sit today, and what happens, unattended,
+      between <code>git tag</code> and a running pod.
+    </p>
+    <nav class="jump">
+      <a href="#architecture">Architecture</a>
+      <a href="#flow">Release flow</a>
+    </nav>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="n">2</div><div class="l">KVM VMs</div></div>
+    <div class="stat"><div class="n">2</div><div class="l">git repos (source, manifests)</div></div>
+    <div class="stat"><div class="n">1</div><div class="l">generic Tekton pipeline</div></div>
+    <div class="stat"><div class="n">9</div><div class="l">steps, tag to running pod</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">manual deploy steps</div></div>
+  </div>
+
+  <section class="block" id="architecture">
+    <h2>Architecture</h2>
+    <p class="sub">
+      One host machine runs Gitea (git server + container registry) and the KVM
+      hypervisor. Two VMs form the cluster; almost everything user-facing runs on
+      the worker, fronted by a single Traefik instance with no exposed ports.
+    </p>
+    <div class="key">
+      <span><i class="dot" style="background:var(--ci)"></i>build path</span>
+      <span><i class="dot" style="background:var(--cd)"></i>deploy path</span>
+      <span><i class="dot" style="background:var(--text-dim)"></i>runtime / routing</span>
+    </div>
+    <figure>
+      <div class="diagram-scroll">
+        <svg id="architecture-svg" viewBox="0 0 1280 620" role="img"
+             aria-label="Architecture: a host machine running Gitea with two repositories and a container registry, connected to a two-node Kubernetes cluster where the worker node runs Traefik, Tekton, Argo CD with Image Updater, dashboards, and the application pod, fronted by Traefik for a browser client.">
+          <defs>
+            <marker id="ah-n" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="currentColor"></path>
+            </marker>
+            <marker id="ah-ci" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="var(--ci)"></path>
+            </marker>
+            <marker id="ah-cd" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="var(--cd)"></path>
+            </marker>
+          </defs>
+
+          <!-- Browser -->
+          <rect x="560" y="20" width="160" height="50" rx="7" fill="var(--panel-2)" stroke="var(--line)"></rect>
+          <text x="640" y="50" text-anchor="middle" class="box-title">You / browser</text>
+
+          <!-- Host region -->
+          <rect x="40" y="110" width="420" height="440" rx="10" fill="none" stroke="var(--line)" stroke-dasharray="5 5"></rect>
+          <text x="60" y="134" class="region-label">Host machine</text>
+          <text x="60" y="150" class="box-sub">10.137.160.1 &middot; self-hosted Gitea</text>
+
+          <rect x="70" y="170" width="360" height="56" rx="7" fill="var(--panel-2)" stroke="var(--line)"></rect>
+          <text x="90" y="194" class="box-title">k8s-gitops-lab</text>
+          <text x="90" y="212" class="box-sub">source + CI (Dockerfile, Tekton pipeline)</text>
+
+          <rect x="70" y="250" width="360" height="56" rx="7" fill="var(--panel-2)" stroke="var(--line)"></rect>
+          <text x="90" y="274" class="box-title">k8s-gitops-manifests</text>
+          <text x="90" y="292" class="box-sub">deploy manifests only &middot; watched by Argo CD</text>
+
+          <rect x="70" y="330" width="360" height="60" rx="7" fill="var(--panel-2)" stroke="var(--line)"></rect>
+          <text x="90" y="356" class="box-title">Container registry</text>
+          <text x="90" y="374" class="box-sub">10.137.160.1:3000 &middot; built into Gitea</text>
+
+          <!-- k8s-master -->
+          <rect x="1040" y="110" width="200" height="56" rx="7" fill="var(--panel-2)" stroke="var(--line)"></rect>
+          <text x="1140" y="132" text-anchor="middle" class="box-title">k8s-master</text>
+          <text x="1140" y="150" text-anchor="middle" class="box-sub">control plane + etcd</text>
+          <line x1="980" y1="205" x2="1040" y2="150" stroke="var(--line)" stroke-dasharray="3 4"></line>
+
+          <!-- Node region -->
+          <rect x="520" y="190" width="460" height="360" rx="10" fill="none" stroke="var(--line)" stroke-dasharray="5 5"></rect>
+          <text x="540" y="214" class="region-label">k8s-node &middot; worker</text>
+          <text x="855" y="214" text-anchor="end" class="box-sub">10.137.160.148</text>
+
+          <rect x="545" y="225" width="410" height="90" rx="7" fill="var(--panel-2)" stroke="var(--line)"></rect>
+          <text x="565" y="249" class="box-title">Traefik (hostNetwork)</text>
+          <text x="565" y="267" class="box-sub">no NodePort &mdash; routes by Host header, one entrypoint</text>
+          <text x="565" y="283" class="box-sub">api&middot; tekton&middot; dashboard&middot; webhook&middot; argocd .staging.test</text>
+          <text x="565" y="298" class="box-sub">pinned to this node</text>
+
+          <rect x="545" y="335" width="130" height="70" rx="7" fill="var(--panel)" stroke="var(--line)"></rect>
+          <text x="610" y="363" text-anchor="middle" class="box-title">Tekton</text>
+          <text x="610" y="379" text-anchor="middle" class="box-sub">Pipelines + Triggers</text>
+
+          <rect x="685" y="335" width="130" height="70" rx="7" fill="var(--panel)" stroke="var(--line)"></rect>
+          <text x="750" y="357" text-anchor="middle" class="box-title">Argo CD</text>
+          <text x="750" y="373" text-anchor="middle" class="box-sub">+ Image Updater</text>
+          <text x="750" y="387" text-anchor="middle" class="box-sub">+ Dashboard UI</text>
+
+          <rect x="825" y="335" width="130" height="70" rx="7" fill="var(--panel)" stroke="var(--line)"></rect>
+          <text x="890" y="363" text-anchor="middle" class="box-title">Dashboards</text>
+          <text x="890" y="379" text-anchor="middle" class="box-sub">Tekton + K8s (read-only)</text>
+
+          <rect x="545" y="430" width="410" height="70" rx="7" fill="var(--panel-2)" stroke="var(--ok)" stroke-width="1.6"></rect>
+          <text x="750" y="458" text-anchor="middle" class="box-title">hello-camel-service</text>
+          <text x="750" y="475" text-anchor="middle" class="box-sub">pod &middot; startupProbe-gated</text>
+          <text x="750" y="489" text-anchor="middle" class="box-sub">Java 17 + Spring Boot 4 + Camel 4</text>
+
+          <!-- Arrows: neutral -->
+          <line x1="640" y1="70" x2="750" y2="222" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah-n)"></line>
+          <text x="645" y="150" class="lbl">HTTPS &middot; Host header, no ports</text>
+
+          <path d="M430,368 C500,400 500,440 545,455" fill="none" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah-n)"></path>
+          <text x="450" y="425" class="lbl">pull image</text>
+
+          <polyline points="955,270 970,270 970,465 955,465" fill="none" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah-n)"></polyline>
+          <text x="975" y="370" class="lbl" transform="rotate(90 975 370)">api.staging.test/sample/*</text>
+
+          <!-- Arrows: CI (amber) -->
+          <path d="M430,198 C480,240 480,300 545,355" fill="none" stroke="var(--ci)" stroke-width="1.6" marker-end="url(#ah-ci)"></path>
+          <text x="452" y="270" class="lbl" style="fill:var(--ci)">webhook: tag push</text>
+
+          <path d="M545,375 C480,330 480,320 430,352" fill="none" stroke="var(--ci)" stroke-width="1.6" marker-end="url(#ah-ci)"></path>
+          <text x="452" y="333" class="lbl" style="fill:var(--ci)">push image (kaniko)</text>
+
+          <!-- Arrows: CD (teal) -->
+          <path d="M430,385 C520,420 560,395 685,350" fill="none" stroke="var(--cd)" stroke-width="1.6" marker-end="url(#ah-cd)"></path>
+          <text x="470" y="410" class="lbl" style="fill:var(--cd)">poll for new tag</text>
+
+          <path d="M685,365 C580,320 480,280 430,270" fill="none" stroke="var(--cd)" stroke-width="1.6" marker-end="url(#ah-cd)"></path>
+          <text x="500" y="300" class="lbl" style="fill:var(--cd)">commit tag bump</text>
+
+          <path d="M430,290 C560,330 620,340 685,380" fill="none" stroke="var(--cd)" stroke-width="1.6" marker-end="url(#ah-cd)"></path>
+          <text x="470" y="345" class="lbl" style="fill:var(--cd)">watch + auto-sync</text>
+
+          <line x1="750" y1="405" x2="750" y2="428" stroke="var(--cd)" stroke-width="1.6" marker-end="url(#ah-cd)"></line>
+          <text x="757" y="420" class="lbl" style="fill:var(--cd)">apply</text>
+        </svg>
+      </div>
+      <figcaption>
+        Nothing talks directly to anything else across the host/cluster boundary &mdash;
+        every hop goes through git or the registry. Tekton (amber) only ever pushes an
+        image; Argo CD Image Updater and Argo CD (teal) only ever move through git.
+        The two paths meet at one pod.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="block" id="flow">
+    <h2>Release flow</h2>
+    <p class="sub">
+      What actually happens after <code>git tag 1.4.0 &amp;&amp; git push gitea 1.4.0</code> &mdash;
+      the only two commands a release requires.
+    </p>
+    <div class="key">
+      <span><i class="dot" style="background:var(--ci)"></i>build</span>
+      <span><i class="dot" style="background:var(--cd)"></i>deploy</span>
+      <span><i class="dot" style="background:var(--ok)"></i>live</span>
+    </div>
+    <figure class="flow-figure">
+      <div class="diagram-scroll">
+        <svg id="flow-svg" viewBox="0 0 820 1300" role="img"
+             aria-label="Nine-step release timeline: tag push, Gitea webhook, Tekton build and push, image in registry, Argo CD Image Updater polls and commits a tag bump, Argo CD syncs, the pod rolls out behind a startup probe, and the release goes live via Traefik, repeating for every future release.">
+          <line x1="60" y1="45" x2="60" y2="1200" stroke="var(--line)" stroke-width="2"></line>
+
+          <!-- step template: circle r=22 at (60,y), number, heading at 108, detail lines -->
+
+          <g>
+            <circle cx="60" cy="70" r="22" fill="var(--ci)"></circle>
+            <text x="60" y="76" text-anchor="middle" class="step-num">1</text>
+            <text x="106" y="66" class="step-h">Tag pushed</text>
+            <text x="106" y="86" class="step-d">git tag 1.4.0 &amp;&amp; git push gitea 1.4.0</text>
+          </g>
+
+          <g>
+            <circle cx="60" cy="210" r="22" fill="var(--ci)"></circle>
+            <text x="60" y="216" text-anchor="middle" class="step-num">2</text>
+            <text x="106" y="206" class="step-h">Gitea webhook fires</text>
+            <text x="106" y="226" class="step-d">tag pushes only &mdash; a branch push</text>
+            <text x="106" y="242" class="step-d">never triggers a build</text>
+          </g>
+
+          <g>
+            <circle cx="60" cy="350" r="22" fill="var(--ci)"></circle>
+            <text x="60" y="356" text-anchor="middle" class="step-num">3</text>
+            <text x="106" y="346" class="step-h">Tekton builds + pushes</text>
+            <text x="106" y="366" class="step-d">git-clone &rarr; Kaniko build &rarr; push</text>
+            <text x="106" y="382" class="step-d">~2m warm cache / ~4m cold (~/.m2 PVC)</text>
+          </g>
+
+          <g>
+            <circle cx="60" cy="490" r="22" fill="var(--ci)"></circle>
+            <text x="60" y="496" text-anchor="middle" class="step-num">4</text>
+            <text x="106" y="486" class="step-h">Image lands in registry</text>
+            <text x="106" y="506" class="step-d">hello-camel-service:1.4.0</text>
+          </g>
+
+          <g>
+            <circle cx="60" cy="630" r="22" fill="var(--cd)"></circle>
+            <text x="60" y="636" text-anchor="middle" class="step-num">5</text>
+            <text x="106" y="626" class="step-h">Image Updater polls</text>
+            <text x="106" y="646" class="step-d">every 2 min &middot; highest semver tag</text>
+            <text x="106" y="662" class="step-d">matching ^[0-9]+\.[0-9]+\.[0-9]+$</text>
+          </g>
+
+          <g>
+            <circle cx="60" cy="770" r="22" fill="var(--cd)"></circle>
+            <text x="60" y="776" text-anchor="middle" class="step-num">6</text>
+            <text x="106" y="766" class="step-h">Bump committed to git</text>
+            <text x="106" y="786" class="step-d">writes .argocd-source-*.yaml to</text>
+            <text x="106" y="802" class="step-d">k8s-gitops-manifests</text>
+          </g>
+
+          <g>
+            <circle cx="60" cy="910" r="22" fill="var(--cd)"></circle>
+            <text x="60" y="916" text-anchor="middle" class="step-num">7</text>
+            <text x="106" y="906" class="step-h">Argo CD syncs</text>
+            <text x="106" y="926" class="step-d">polls every 3 min (or forced)</text>
+            <text x="106" y="942" class="step-d">prune + selfHeal both on</text>
+          </g>
+
+          <g>
+            <circle cx="60" cy="1050" r="22" fill="var(--ok)"></circle>
+            <text x="60" y="1056" text-anchor="middle" class="step-num">8</text>
+            <text x="106" y="1046" class="step-h">Pod rolls out</text>
+            <text x="106" y="1066" class="step-d">startupProbe tolerates 94-108s JVM</text>
+            <text x="106" y="1082" class="step-d">boot under node contention</text>
+          </g>
+
+          <g>
+            <circle cx="60" cy="1170" r="22" fill="var(--ok)"></circle>
+            <text x="60" y="1176" text-anchor="middle" class="step-num">9</text>
+            <text x="106" y="1166" class="step-h">Live</text>
+            <text x="106" y="1186" class="step-d">api.staging.test/sample/* via Traefik</text>
+            <text x="106" y="1202" class="step-d">no port, no manual step</text>
+          </g>
+
+          <text x="60" y="1250" class="step-d">&#8635; repeat for every release &mdash; no step above is ever done by hand</text>
+        </svg>
+      </div>
+      <figcaption>
+        Steps 1&ndash;4 (amber) run in the source repo; 5&ndash;7 (teal) run against the
+        manifests repo; 8&ndash;9 (green) are the cluster catching up. Verified for real
+        across two live tag pushes, including one that confirmed the probe fix in
+        step 8 eliminated the earlier liveness-probe flakiness.
+      </figcaption>
+    </figure>
+  </section>
+
+  <footer>
+    Diagrams for <span class="mono">rpamu/k8s-gitops-lab</span> and
+    <span class="mono">rpamu/k8s-gitops-manifests</span>, both self-hosted on Gitea.
+  </footer>
+
+</div>

@@ -80,6 +80,10 @@ What happens next, unattended:
 Verified for real (not staged) with two live tag-push releases — see
 [docs/my-lab/argocd-setup.md](docs/my-lab/argocd-setup.md) and
 [docs/my-lab/hello-camel-service-deploy.md](docs/my-lab/hello-camel-service-deploy.md).
+An illustrated version of both diagrams above is in
+[docs/diagrams.html](docs/diagrams.html) — GitHub/Gitea show it as
+source, not rendered; download it (or clone the repo) and open the file
+directly in a browser to view it.
 
 ## Contents
 
