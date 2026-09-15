@@ -104,13 +104,64 @@ entirely.
 
 ## 4. Write the Pipeline
 
-Chains the two Tasks with `runAfter`, sharing one workspace (backed by a
-PVC, via `volumeClaimTemplate` on the `PipelineRun`) between them. Every
-app-specific value (git URL, revision, Dockerfile subdirectory, image
-reference) is a `Pipeline`-level param with no default baked in for the
-app-specific ones — the caller must supply them:
+Chains the two Tasks with `runAfter`, sharing a `source` workspace (backed
+by a PVC, via `volumeClaimTemplate` on the `PipelineRun` — a fresh one per
+run) between them, plus an optional `maven-cache` workspace (see below)
+passed straight through to `kaniko-build`. Every app-specific value (git
+URL, revision, Dockerfile subdirectory, image reference) is a
+`Pipeline`-level param with no default baked in for the app-specific
+ones — the caller must supply them:
 
 See [../ci/tekton/pipeline.yaml](../ci/tekton/pipeline.yaml).
+
+### Persisting `~/.m2` across builds
+
+Without this, every build starts Maven's local repository empty — a
+from-scratch `mvn dependency:go-offline` inside the Kaniko build stage,
+which took ~9 minutes the first time (see
+[my-lab/hello-camel-service-deploy.md](my-lab/hello-camel-service-deploy.md)).
+Kaniko runs a Dockerfile's `RUN` commands directly against the pod's real
+root filesystem (it's not a nested Docker daemon), so mounting a
+**long-lived** PVC at `/root/.m2` in the `kaniko-build` Task makes that
+cache genuinely persist between runs — repeat builds only re-download
+dependencies that actually changed.
+
+This needs its own PVC, created **once**, separate from the `source`
+workspace (which is a fresh `volumeClaimTemplate` per `PipelineRun` by
+design — each build gets a clean clone):
+
+See [../ci/tekton/pvc-maven-cache.yaml](../ci/tekton/pvc-maven-cache.yaml).
+
+```bash
+kubectl apply -f ci/tekton/pvc-maven-cache.yaml
+```
+
+Both the `Task` and `Pipeline` declare this as an `optional: true`
+workspace, so a non-Maven app's `PipelineRun`/`TriggerTemplate` can simply
+not bind it. A `PipelineRun` that does bind it uses
+`persistentVolumeClaim: {claimName: maven-m2-cache}` (an existing PVC by
+name), not `volumeClaimTemplate` (a new one per run) — that distinction is
+what makes the cache actually persistent.
+
+**Gotcha**: with more than one PVC-backed workspace on a single `Task`,
+Tekton's "Affinity Assistant" (a feature that co-schedules a `Task`'s pod
+onto whichever node an `RWO` PVC is already bound to, for multi-node
+clusters) refuses the `TaskRun` outright with `more than one
+PersistentVolumeClaim is bound`. This lab has exactly one worker node, so
+Affinity Assistant serves no purpose anyway — disabled it cluster-wide.
+The legacy flag for this, `disable-affinity-assistant`, is **superseded**
+by `coschedule` in current Tekton — setting only the old one had no
+effect (the `coschedule: workspaces` default silently won), so it's the
+new key that actually needs the change:
+
+```bash
+kubectl -n tekton-pipelines patch configmap feature-flags --type merge \
+  -p '{"data":{"coschedule":"disabled"}}'
+kubectl -n tekton-pipelines rollout restart deployment tekton-pipelines-controller
+```
+
+The ConfigMap patch alone isn't enough — the controller only picks up the
+new flag value on the next restart, not on next reconcile.
 
 ## 5. Run it manually
 

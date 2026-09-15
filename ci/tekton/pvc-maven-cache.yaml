@@ -1,0 +1,16 @@
+# Long-lived PVC for the shared Maven local repository (~/.m2), reused
+# across PipelineRuns and across apps - unlike the "source" workspace,
+# this is NOT created per-run via a volumeClaimTemplate, so its contents
+# survive between builds. RWO is fine: this lab has a single worker node,
+# so every build pod lands there anyway.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: maven-m2-cache
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

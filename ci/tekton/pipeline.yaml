@@ -30,6 +30,9 @@ spec:
       description: registry host:port needing insecure/plain-HTTP treatment (see kaniko-build Task)
   workspaces:
     - name: source
+    - name: maven-cache
+      optional: true
+      description: persistent ~/.m2 cache (see pvc-maven-cache.yaml) - speeds up repeat Maven builds; omit for a non-Maven app
   tasks:
     - name: fetch-source
       taskRef:
@@ -57,3 +60,5 @@ spec:
       workspaces:
         - name: source
           workspace: source
+        - name: maven-cache
+          workspace: maven-cache

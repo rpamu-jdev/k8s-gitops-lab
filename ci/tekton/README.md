@@ -39,6 +39,7 @@ reusing the same `pipeline.yaml` and `Task`s unchanged.
 ## Apply
 
 ```bash
+kubectl apply -f pvc-maven-cache.yaml
 kubectl apply -f task-git-clone.yaml
 kubectl apply -f task-kaniko-build.yaml
 kubectl apply -f pipeline.yaml
@@ -106,9 +107,43 @@ kubectl logs job/prune-test-1
 kubectl delete job prune-test-1
 ```
 
+## Speeding up Maven builds: a persistent `.m2` cache
+
+`pvc-maven-cache.yaml` is a **long-lived** PVC (unlike `source`, which is
+a fresh `volumeClaimTemplate` per `PipelineRun`) mounted at `/root/.m2` in
+the `kaniko-build` Task. Kaniko executes a Dockerfile's `RUN` commands
+directly against the pod's real root filesystem, so `mvn` inside the
+build stage sees and reuses whatever's already cached there from a
+previous run — a from-scratch `mvn dependency:go-offline` only happens
+the first time, or when dependencies actually change. The workspace is
+declared `optional: true` on both the `Task` and `Pipeline`, so a
+non-Maven app's `PipelineRun` can simply omit it.
+
+Applies once, shared across every Java app's builds (not per-app):
+
+```bash
+kubectl apply -f pvc-maven-cache.yaml
+```
+
+**Prerequisite** (cluster-wide, not committed here — this lab has one
+worker node, so it's set once): Tekton's Affinity Assistant otherwise
+rejects a `TaskRun` binding two PVC-backed workspaces
+(`source`+`maven-cache`) with `more than one PersistentVolumeClaim is
+bound`. See [../../docs/tekton-setup.md](../../docs/tekton-setup.md) for
+why this needs `coschedule`, not the older `disable-affinity-assistant`
+flag:
+
+```bash
+kubectl -n tekton-pipelines patch configmap feature-flags --type merge \
+  -p '{"data":{"coschedule":"disabled"}}'
+kubectl -n tekton-pipelines rollout restart deployment tekton-pipelines-controller
+```
+
 ## Files
 
 **In active use:**
+- `pvc-maven-cache.yaml` — persistent `.m2` cache PVC, shared across all
+  Java app builds
 - `task-git-clone.yaml`, `task-kaniko-build.yaml` — the two build steps,
   fully generic, self-written rather than pulled from Tekton Hub
 - `pipeline.yaml` — generic `java-app-build-push`: chains the two Tasks

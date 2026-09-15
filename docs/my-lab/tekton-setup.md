@@ -236,6 +236,48 @@ failed since `1.1.1` no longer existed by then. Not a bug in this setup,
 just an artifact of deleting the test tag quickly after pushing it;
 cleaned up manually rather than waiting for the daily pruner.
 
+## Persisting `~/.m2` across builds
+
+Every build was starting Maven's local repo from empty — a from-scratch
+`dependency:go-offline` inside the Kaniko build stage, ~9 minutes end to
+end the first time (see
+[hello-camel-service-deploy.md](hello-camel-service-deploy.md)). Added a
+long-lived `PersistentVolumeClaim` (`ci/tekton/pvc-maven-cache.yaml`,
+`maven-m2-cache`, 5Gi, `local-path`), mounted at `/root/.m2` in
+`kaniko-build` as an optional `maven-cache` workspace — since Kaniko runs
+`RUN` commands directly against the pod's real root filesystem (not a
+nested Docker daemon), a real PVC mount there is genuinely visible to
+`mvn`, and unlike `source` (a fresh `volumeClaimTemplate` per run) it's
+bound by claim name, so its contents actually survive between builds.
+
+Hit a real bug getting this working: a `TaskRun` binding two different
+PVC-backed workspaces (`source` + `maven-cache`) failed immediately with
+`[User error] more than one PersistentVolumeClaim is bound` — Tekton's
+"Affinity Assistant" (co-schedules a `Task`'s pod onto whichever node an
+`RWO` PVC is already bound to, for multi-node clusters) doesn't support
+more than one PVC-backed workspace per `Task`. This lab has exactly one
+worker node, so Affinity Assistant buys nothing here — tried disabling it
+via the documented `disable-affinity-assistant: "true"` feature flag,
+which had **no effect**; turned out this Tekton version's `feature-flags`
+ConfigMap already had `coschedule: workspaces` set (the flag that
+superseded `disable-affinity-assistant`), which silently overrode it.
+Setting `coschedule: disabled` instead, plus restarting
+`tekton-pipelines-controller` (the flag doesn't take effect on next
+reconcile, only next controller start), fixed it:
+
+```bash
+kubectl -n tekton-pipelines patch configmap feature-flags --type merge \
+  -p '{"data":{"coschedule":"disabled"}}'
+kubectl -n tekton-pipelines rollout restart deployment tekton-pipelines-controller
+```
+
+Measured directly with two back-to-back manual `PipelineRun`s (same
+`pom.xml`, so it's purely the cache effect, not "fewer dependencies"):
+`build-and-push` `TaskRun` duration went from **4m10s (cold, empty
+`.m2`)** to **2m01s (warm, cache already populated)** — a ~2x speedup,
+with the remainder mostly base-image pulls and the JRE runtime-stage copy,
+which the `.m2` cache doesn't touch.
+
 ## Cleaning up old PipelineRuns
 
 With automatic triggers now producing a new `PipelineRun` on every push,
@@ -268,5 +310,10 @@ kubectl delete job prune-test-1
       [dashboards-setup.md](dashboards-setup.md))
 - [x] Probe timings widened to tolerate node-wide resource contention
 - [x] Daily pruning CronJob for old PipelineRuns, keeping the last 5
-- [ ] Argo CD — nothing currently deploys a newly-pushed image
-      automatically; that's the deliberate next gap to fill
+- [x] Persistent `~/.m2` cache for Maven builds (see
+      [tekton-setup.md](../tekton-setup.md) and above) — verified via a
+      much faster second build with the same `pom.xml`
+- [x] Argo CD deploys `hello-camel-service` automatically from git — see
+      [argocd-setup.md](argocd-setup.md). The image-tag bump from a
+      Tekton build isn't yet wired into a committed manifest change, so
+      that hop is still manual

@@ -41,3 +41,6 @@ spec:
                 resources:
                   requests:
                     storage: 1Gi
+          - name: maven-cache
+            persistentVolumeClaim:
+              claimName: maven-m2-cache

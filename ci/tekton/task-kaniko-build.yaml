@@ -3,6 +3,14 @@
 # docs/my-lab/hello-camel-service-deploy.md for why the scoped flags matter
 # over the global --insecure/--skip-tls-verify, which broke anonymous
 # Docker Hub base-image pulls).
+#
+# The optional "maven-cache" workspace mounts at /root/.m2 - Kaniko runs a
+# Dockerfile's RUN commands directly against the pod's real root
+# filesystem (it's not a nested Docker daemon), so a PVC mounted there is
+# genuinely visible to `mvn` during the build stage and, unlike the
+# "source" workspace, isn't tied to this run's lifecycle - see
+# ci/tekton/pvc-maven-cache.yaml and docs/tekton-setup.md. Left optional so
+# this Task still works for a non-Maven build with no cache bound.
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
@@ -21,6 +29,9 @@ spec:
       default: "10.137.160.1:3000"
   workspaces:
     - name: source
+    - name: maven-cache
+      optional: true
+      mountPath: /root/.m2
   volumes:
     - name: docker-config
       secret:
