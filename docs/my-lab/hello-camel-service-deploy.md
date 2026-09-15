@@ -156,6 +156,39 @@ curl -H "Host: api.staging.test" http://10.137.160.148/sample/api/hello
 # -> 200, same response as before
 ```
 
+## Probes: from a fixed delay to a startupProbe
+
+Startup time on `k8s-node` kept climbing as more infra shared it: ~6s
+freshly booted, ~40s once Traefik/dashboards/Tekton/Triggers joined (the
+original probe widening, see the deployment manifest history), then
+**94–108 seconds** once Argo CD + Image Updater were added too (33 pods
+on one 4 vCPU/6GB node by that point — confirmed via
+`kubectl logs <pod> | grep 'Started HelloServiceApplication'`, which
+reported `Started HelloServiceApplication in 94.478 seconds`).
+
+The `livenessProbe`'s `initialDelaySeconds: 60` was right at the edge of
+that — Kubernetes events showed the probe hitting `connection refused`
+(JVM not listening yet), then `context deadline exceeded` (listening,
+but slow to answer), then a single `HTTP probe failed with statuscode:
+503` (Spring's liveness state hadn't flipped to `CORRECT` yet) — one bad
+poll cycle away from a real crash loop, not just noisy events.
+
+Fixed properly instead of guessing another bigger `initialDelaySeconds`:
+added a `startupProbe` (gates liveness/readiness entirely until the app
+is actually up — its `failureThreshold: 120` × `periodSeconds: 5` gives
+~10 minutes of startup tolerance), and bumped every probe's
+`timeoutSeconds` from the 1s default to `5` (a CPU-throttled JVM can take
+longer than 1s just to *answer* a request it's already received, which
+otherwise reads identically to a hung app). See
+[deployment.yaml](http://10.137.160.1:3000/rpamu/k8s-gitops-manifests/src/branch/main/apps/hello-camel-service/deployment.yaml)
+in the manifests repo.
+
+Verified across two real rollouts (tag pushes `1.2.0` then `1.3.0`,
+driven all the way through by Tekton + Image Updater + Argo CD, no manual
+step): both showed only harmless `Startup probe failed` events during the
+gated startup window, zero `Liveness`/`Readiness` warnings, clean `1/1
+Ready` with no restarts.
+
 ## Status
 
 - [x] Image built and pushed to Gitea registry via Kaniko (v1.1.0)
@@ -177,3 +210,9 @@ curl -H "Host: api.staging.test" http://10.137.160.148/sample/api/hello
       change to a manifest in the separate `k8s-gitops-manifests` repo
       (`apps/hello-camel-service/`) now reaches the cluster via `git push`,
       auto-synced (`prune`+`selfHeal`)
+- [x] Full release loop verified twice with real tag pushes (`1.2.0`,
+      `1.3.0`): Tekton build → Argo CD Image Updater bump → Argo CD sync,
+      zero manual steps — see [argocd-setup.md](argocd-setup.md)
+- [x] Liveness/readiness flakiness under node contention fixed with a
+      `startupProbe` and realistic `timeoutSeconds` (see above) — the
+      second of the two test rollouts confirmed zero probe warnings
