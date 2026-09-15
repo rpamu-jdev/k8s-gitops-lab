@@ -1,24 +1,33 @@
-# Build + deploy pipeline for hello-camel-service: clone -> kaniko build &
-# push -> roll the Deployment to the new image.
+# Generic build+push pipeline for any Java app in this repo: clone -> kaniko
+# build & push. Deliberately does NOT deploy anything - deployment is
+# Argo CD's job (or manual kubectl, for now), not Tekton's. Nothing here is
+# specific to any one app: which app, which subdirectory, and what image
+# reference to push are all supplied as params by the caller (a manual
+# PipelineRun or a Trigger's TriggerTemplate), so the same Pipeline/Tasks
+# are reused for every Java app in this repo.
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: hello-camel-service-build-deploy
+  name: java-app-build-push
   namespace: default
 spec:
   params:
     - name: git-url
       type: string
-      default: http://10.137.160.1:3000/rpamu/k8s-gitops-lab.git
+      description: git repo to clone
     - name: git-revision
       type: string
-      default: main
-    - name: image-tag
+      description: branch, tag, or ref to build (e.g. a tag name for a release build)
+    - name: context-subdir
       type: string
-      description: tag to build and deploy, e.g. 1.2.0
+      description: subdirectory within the repo containing the app's Dockerfile (e.g. apps/java-app)
+    - name: image
+      type: string
+      description: full destination image reference, e.g. 10.137.160.1:3000/rpamu/hello-camel-service:1.2.0
     - name: registry
       type: string
       default: "10.137.160.1:3000"
+      description: registry host:port needing insecure/plain-HTTP treatment (see kaniko-build Task)
   workspaces:
     - name: source
   tasks:
@@ -40,23 +49,11 @@ spec:
         name: kaniko-build
       params:
         - name: context-subdir
-          value: apps/java-app
+          value: $(params.context-subdir)
         - name: image
-          value: $(params.registry)/rpamu/hello-camel-service:$(params.image-tag)
+          value: $(params.image)
         - name: registry
           value: $(params.registry)
       workspaces:
         - name: source
           workspace: source
-
-    - name: deploy
-      runAfter: ["build-and-push"]
-      taskRef:
-        name: deploy
-      params:
-        - name: deployment
-          value: hello-camel-service
-        - name: container
-          value: hello-camel-service
-        - name: image
-          value: $(params.registry)/rpamu/hello-camel-service:$(params.image-tag)

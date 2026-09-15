@@ -168,6 +168,8 @@ curl -H "Host: api.staging.test" http://10.137.160.148/sample/api/hello
 - [x] `/etc/hosts` entry added on the lab host for `api.staging.test`
       (along with `tekton.`/`dashboard.` — see
       [dashboards-setup.md](dashboards-setup.md)); browser access confirmed
-- [x] Build+push automated via Tekton — see [tekton-setup.md](tekton-setup.md)
-- [ ] Automate deploy via Argo CD (currently `kubectl set image` from the
-      Tekton `deploy` Task, not GitOps-reconciled)
+- [x] Build+push automated via Tekton, triggered by tag pushes — see
+      [tekton-setup.md](tekton-setup.md). Deliberately build+push only:
+      Tekton does not deploy anything here
+- [ ] Deploy is still fully manual (`kubectl apply`/`kubectl set image`)
+      — Argo CD is the intended eventual answer, not yet set up

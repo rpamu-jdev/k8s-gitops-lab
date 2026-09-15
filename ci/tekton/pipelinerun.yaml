@@ -1,21 +1,24 @@
-# Manual trigger: kubectl create -f pipelinerun.yaml (creates a new run
-# each time - PipelineRun names must be unique, so either use
-# generateName as below, or `kubectl create` which allows that).
+# Manual trigger for hello-camel-service specifically (the generic
+# Pipeline itself has no app baked in - see pipeline.yaml). Run with
+# `kubectl create -f pipelinerun.yaml` (generateName, so re-runnable).
+# Build+push only - nothing here deploys anything.
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: hello-camel-service-build-deploy-
+  generateName: hello-camel-service-build-
   namespace: default
 spec:
   pipelineRef:
-    name: hello-camel-service-build-deploy
+    name: java-app-build-push
   params:
     - name: git-url
       value: http://10.137.160.1:3000/rpamu/k8s-gitops-lab.git
     - name: git-revision
       value: main
-    - name: image-tag
-      value: "1.1.0"
+    - name: context-subdir
+      value: apps/java-app
+    - name: image
+      value: 10.137.160.1:3000/rpamu/hello-camel-service:1.1.0
   workspaces:
     - name: source
       volumeClaimTemplate:
@@ -25,6 +28,3 @@ spec:
           resources:
             requests:
               storage: 1Gi
-  taskRunSpecs:
-    - pipelineTaskName: deploy
-      serviceAccountName: tekton-deployer

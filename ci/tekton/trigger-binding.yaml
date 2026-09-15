@@ -1,13 +1,15 @@
 # Extracts the fields the pipeline needs from Gitea's push webhook JSON
-# payload (compatible with the standard git-provider push event shape).
+# payload. Only fires for tag pushes (see eventlistener.yaml's filter) -
+# "version" is the pushed tag name itself, extracted by the cel
+# interceptor's overlay (see eventlistener.yaml), not the commit SHA.
 apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerBinding
 metadata:
-  name: gitea-push-binding
+  name: gitea-tag-push-binding
   namespace: default
 spec:
   params:
     - name: git-repo-url
       value: $(body.repository.clone_url)
-    - name: short-sha
-      value: $(extensions.short_sha)
+    - name: version
+      value: $(extensions.tag_name)

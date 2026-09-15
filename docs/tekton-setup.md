@@ -1,9 +1,21 @@
-# Tekton: build + deploy pipeline
+# Tekton: generic build + push pipeline for Java apps
 
 Generic steps to install [Tekton Pipelines](https://tekton.dev/) and wire up
-a build-and-deploy pipeline for an app in this lab, using Kaniko (the same
-tool used for the manual builds earlier) and a self-hosted git server
-(Gitea) as the source.
+a **build-and-push-only** pipeline, using Kaniko (the same tool used for the
+manual builds earlier) and a self-hosted git server (Gitea) as the source.
+
+**Tekton's job here stops at pushing the image.** It does not deploy
+anything — no `kubectl set image`, no touching a `Deployment`. Deployment
+is a separate concern (Argo CD, or manual `kubectl apply`, for now). This
+keeps the boundary clean: Tekton = CI (build/test/push an artifact),
+something else = CD (get that artifact running).
+
+The `Pipeline`/`Task`s are **generic across every Java app in the repo** —
+nothing in them names a specific app. Which repo, which subdirectory, and
+what image reference to push are all passed in as params by whoever
+triggers a run (a manual `PipelineRun`, or a `Trigger`'s `TriggerTemplate`).
+Adding a second Java app means a new `PipelineRun`/`TriggerTemplate`
+instance with different param values — not a new `Pipeline`.
 
 ## Prerequisites
 
@@ -52,21 +64,24 @@ kubectl create secret generic registry-creds \
 
 ## 3. Write the Tasks
 
-Three self-written `Task`s rather than pulling from Tekton Hub — keeps the
+Two self-written `Task`s rather than pulling from Tekton Hub — keeps the
 pipeline fully self-contained, with no runtime dependency on Hub's resolver
-reaching out over the network during a build:
+reaching out over the network during a build. Both are app-agnostic:
 
 - **git-clone** — a plain `git clone` in an `alpine/git` container into the
-  shared workspace
+  shared workspace. Params: `url`, `revision` (a branch, tag, or any git
+  ref).
 - **kaniko-build** — builds and pushes with Kaniko, mounting the registry
   secret at `/kaniko/.docker/config.json` via a `Secret` volume with an
   `items` remap (the secret's key is `.dockerconfigjson`, Kaniko expects
-  the file literally named `config.json`)
-- **deploy** — `kubectl set image` + `kubectl rollout status`, running as a
-  dedicated `ServiceAccount` scoped to just `get`/`patch` on `Deployments`
-  in its namespace
+  the file literally named `config.json`). Params: `context-subdir` (which
+  directory in the cloned repo has the `Dockerfile`), `image` (full
+  destination reference), `registry` (host:port needing the insecure-HTTP
+  treatment below).
 
-See [../ci/tekton/](../ci/tekton/) for the actual manifests.
+See [../ci/tekton/](../ci/tekton/) for the actual manifests. (A `deploy`
+`Task` also exists there from an earlier iteration — kept for possible
+future reuse, but **not wired into the `Pipeline`**.)
 
 ### A real gotcha: don't use global insecure flags with Kaniko
 
@@ -89,28 +104,26 @@ entirely.
 
 ## 4. Write the Pipeline
 
-Chains the three Tasks with `runAfter`, passing the built image reference
-from `build-and-push` through to `deploy`, sharing one workspace (backed by
-a PVC, via `volumeClaimTemplate` on the `PipelineRun`) between all three:
+Chains the two Tasks with `runAfter`, sharing one workspace (backed by a
+PVC, via `volumeClaimTemplate` on the `PipelineRun`) between them. Every
+app-specific value (git URL, revision, Dockerfile subdirectory, image
+reference) is a `Pipeline`-level param with no default baked in for the
+app-specific ones — the caller must supply them:
 
 See [../ci/tekton/pipeline.yaml](../ci/tekton/pipeline.yaml).
 
-## 5. Run it
+## 5. Run it manually
 
 ```bash
 kubectl create -f ci/tekton/pipelinerun.yaml   # generateName, so re-runnable
 kubectl get pipelinerun -w
 ```
 
-Or target the `serviceAccountName` per-task (not the whole run) via
-`taskRunSpecs` on the `PipelineRun`, so only the `deploy` step gets the
-elevated permissions:
-
-```yaml
-taskRunSpecs:
-  - pipelineTaskName: deploy
-    serviceAccountName: tekton-deployer
-```
+A manual `PipelineRun` supplies the app-specific params
+(`context-subdir`, `image`, etc.) that the generic `Pipeline` itself
+doesn't have defaults for — see
+[../ci/tekton/pipelinerun.yaml](../ci/tekton/pipelinerun.yaml) for a
+worked example targeting one specific app.
 
 ## Watching progress / debugging
 
@@ -124,11 +137,12 @@ always means a bad image tag in that `Task` — check
 `kubectl get taskrun <name> -o jsonpath='{.status.conditions[0].message}'`
 for the exact pull error rather than guessing.
 
-## Automatic builds on push (Tekton Triggers + a git-server webhook)
+## Automatic builds on tag push (Tekton Triggers + a git-server webhook)
 
-Fires the same `Pipeline` automatically whenever the git server delivers a
-push webhook, instead of running `kubectl create -f pipelinerun.yaml` by
-hand every time.
+Fires the same build-only `Pipeline` automatically whenever a **tag** is
+pushed to the git server — not on every ordinary commit. The pushed tag
+name becomes the image version, so cutting a release is just
+`git tag 1.2.0 && git push <remote> 1.2.0`.
 
 ### Install Tekton Triggers
 
@@ -187,26 +201,27 @@ roleRef:
 ### TriggerBinding, TriggerTemplate, EventListener
 
 `TriggerBinding` pulls fields out of the push webhook's JSON body;
-`TriggerTemplate` uses them to stamp out a `PipelineRun`; `EventListener`
+`TriggerTemplate` uses them to stamp out a `PipelineRun` (still supplying
+the app-specific params the generic `Pipeline` needs); `EventListener`
 ties a binding+template together behind an interceptor that filters which
-events actually fire it.
+events actually fire it — here, tag pushes only.
 
 ```yaml
 apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerBinding
 metadata:
-  name: git-push-binding
+  name: git-tag-push-binding
 spec:
   params:
     - name: git-repo-url
       value: $(body.repository.clone_url)
-    - name: short-sha
-      value: $(extensions.short_sha)
+    - name: version
+      value: $(extensions.tag_name)
 ```
 
-**Gotcha:** values computed by an interceptor's `overlays` (like a
-truncated commit SHA) land in a **top-level `extensions` field**, sibling
-to `body`/`header` — reference them as `$(extensions.<key>)`, *not*
+**Gotcha:** values computed by an interceptor's `overlays` (like the
+extracted tag name here) land in a **top-level `extensions` field**,
+sibling to `body`/`header` — reference them as `$(extensions.<key>)`, *not*
 `$(body.extensions.<key>)`. The interceptor's own logs
 (`kubectl -n tekton-pipelines logs -l app.kubernetes.io/component=interceptors`)
 show exactly what it computed if a binding silently comes up empty.
@@ -215,26 +230,28 @@ show exactly what it computed if a binding silently comes up empty.
 apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerTemplate
 metadata:
-  name: build-deploy-trigger-template
+  name: <app-name>-tag-trigger-template
 spec:
   params:
     - name: git-repo-url
-    - name: short-sha
+    - name: version
   resourcetemplates:
     - apiVersion: tekton.dev/v1
       kind: PipelineRun
       metadata:
-        generateName: <pipeline-name>-auto-
+        generateName: <app-name>-build-
       spec:
         pipelineRef:
-          name: <pipeline-name>
+          name: java-app-build-push
         params:
           - name: git-url
             value: $(tt.params.git-repo-url)
           - name: git-revision
-            value: main
-          - name: image-tag
-            value: $(tt.params.short-sha)
+            value: $(tt.params.version)
+          - name: context-subdir
+            value: <path-to-this-app-in-the-repo>
+          - name: image
+            value: <registry>/<app-name>:$(tt.params.version)
         workspaces:
           - name: source
             volumeClaimTemplate:
@@ -243,10 +260,16 @@ spec:
                 resources: { requests: { storage: 1Gi } }
 ```
 
-Tagging the built image with the commit's short SHA (rather than reusing a
-fixed version string) means every automatic build produces a distinct,
-traceable tag and a real rollout — a repeated fixed tag wouldn't actually
-change anything on `kubectl set image`.
+Using the pushed tag as both `git-revision` (clone exactly that tag) and
+the image tag keeps the built artifact's version traceable straight back
+to the git ref that produced it — pushing tag `1.2.0` builds and pushes
+`.../app:1.2.0`, nothing computed or guessed.
+
+The `context-subdir`/`image` values here are specific to one app — a
+second Java app in the same repo needs its own `TriggerTemplate` (and
+usually its own `Trigger` entry, or filter the tag name itself, e.g.
+requiring a `<app-name>-` prefix) with different values for those two
+fields, still pointing at the same generic `java-app-build-push` `Pipeline`.
 
 ```yaml
 apiVersion: triggers.tekton.dev/v1beta1
@@ -256,7 +279,7 @@ metadata:
 spec:
   serviceAccountName: el-webhook
   triggers:
-    - name: push-main
+    - name: tag-push
       interceptors:
         - ref:
             name: "cel"
@@ -264,19 +287,21 @@ spec:
             - name: "filter"
               value: >
                 header.match('X-Gitea-Event', 'push') &&
-                body.ref == 'refs/heads/main'
+                body.ref.startsWith('refs/tags/')
             - name: "overlays"
               value:
-                - key: short_sha
-                  expression: "body.after.truncate(7)"
+                - key: tag_name
+                  expression: "body.ref.split('/')[2]"
       bindings:
-        - ref: git-push-binding
+        - ref: git-tag-push-binding
       template:
-        ref: build-deploy-trigger-template
+        ref: <app-name>-tag-trigger-template
 ```
 
-`truncate` is a Tekton-provided CEL extension function (not standard CEL) —
-exactly the tool for shortening a commit SHA for use as an image tag.
+`split` is a Tekton-provided CEL extension function (not standard CEL) —
+`body.ref` for a tag push looks like `refs/tags/1.2.0`, so
+`.split('/')[2]` pulls out just `1.2.0`. (This assumes tag names don't
+contain `/` themselves — true for ordinary version tags.)
 
 The `EventListener` controller auto-creates a `Service` named
 `el-<eventlistener-name>` on port `8080`. Route it to a hostname the same
@@ -302,7 +327,10 @@ spec:
 
 Gitea (this lab's server): repo → Settings → Webhooks → Add Webhook →
 Gitea, with the URL pointing at the hostname above, a shared secret, and
-`push` as the trigger event (optionally scoped to a branch filter).
+`push` as the trigger event. **Don't scope the branch filter to a branch
+name** (e.g. `main`) — tag pushes aren't on any branch, so a branch filter
+will silently swallow every tag push. Leave it as `*` (all refs) and let
+the `cel` interceptor do the actual filtering.
 
 **Gotcha:** if the git server and the webhook target are both on a private
 network (typical for a lab), the server's own SSRF protection may refuse
@@ -325,16 +353,26 @@ ALLOWED_HOST_LIST = private,loopback
 ...then restart Gitea. Not needed at all if your git server and cluster
 aren't both on private IPs.
 
-### Test without waiting for a real push
+### Test without waiting for a real tag push
 
-Gitea has a built-in "send a test delivery" endpoint that fires a
-synthetic-but-realistic push event (real repo, real latest commit) at the
-webhook — useful for iterating on the `EventListener`/binding/template
-without needing an actual commit each time:
+Gitea has a built-in "send a test delivery" endpoint — but it always
+simulates a push to the **default branch**, not a tag push, so it's only
+useful for iterating on binding/template wiring in general, not for
+testing the tag-specific filter end-to-end:
 
 ```bash
 curl -X POST "http://<gitea-host>/api/v1/repos/<owner>/<repo>/hooks/<id>/tests" \
   -H "Authorization: token <token>"
+```
+
+To actually exercise the tag-push path, push a real (disposable) tag:
+
+```bash
+git tag 0.0.0-test
+git push <remote> 0.0.0-test
+# ... verify, then:
+git tag -d 0.0.0-test
+git push <remote> :refs/tags/0.0.0-test
 ```
 
 Then watch for a new `PipelineRun`:
@@ -343,11 +381,71 @@ Then watch for a new `PipelineRun`:
 kubectl get pipelinerun --sort-by=.metadata.creationTimestamp
 ```
 
+## Cleaning up old PipelineRuns
+
+Nothing in Tekton prunes completed `PipelineRun`/`TaskRun` objects (or
+their pods) automatically — with automatic triggers now producing a new
+one on every tag push, they accumulate indefinitely if nothing cleans them
+up. A `PipelineRun`'s `TaskRun`s and their pods are owned by it
+(`ownerReferences`), so deleting the `PipelineRun` cascades to all of them
+— the only thing needed is something that periodically deletes old
+`PipelineRun`s.
+
+A `CronJob` running `kubectl` (rather than reaching for a dedicated pruner
+component) keeps this simple:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pipelinerun-pruner
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: <sa-with-list-and-delete-on-pipelineruns>
+          restartPolicy: OnFailure
+          containers:
+            - name: prune
+              image: bitnami/kubectl:latest
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  OLD=$(kubectl get pipelinerun \
+                    -o jsonpath='{range .items[*]}{.metadata.creationTimestamp}{" "}{.metadata.name}{"\n"}{end}' \
+                    | sort | head -n -5 | awk '{print $2}')
+                  [ -z "$OLD" ] && echo "nothing to prune" || echo "$OLD" | xargs -r kubectl delete pipelinerun
+```
+
+`sort` (ascending, oldest first) + `head -n -5` (print everything *except*
+the last 5 lines) keeps the 5 newest and deletes the rest — adjust the `-5`
+for a different retention count, or swap the whole expression for a
+time-based cutoff (e.g. anything with a `creationTimestamp` older than 24h)
+if count-based retention isn't what you want.
+
+Needs its own `ServiceAccount`/`Role` scoped to just
+`get`/`list`/`delete` on `pipelineruns`.
+
+Test on demand rather than waiting for the schedule:
+
+```bash
+kubectl create job --from=cronjob/<cronjob-name> prune-test-1
+kubectl logs job/prune-test-1
+kubectl delete job prune-test-1
+```
+
 ## Notes / limitations
 
+- **Build+push only, deliberately.** No `deploy` step in the `Pipeline` —
+  getting a newly-pushed image actually running is a separate concern
+  (Argo CD, eventually; manual `kubectl` for now).
 - No webhook signature verification — Tekton Triggers ships interceptors
   for GitHub/GitLab/Bitbucket/Slack signature schemes, but not Gitea's.
-  Filtering here is by event type + branch only (via the `cel`
+  Filtering here is by event type + ref shape only (via the `cel`
   interceptor), which is acceptable when the webhook endpoint is reachable
   only from a private network, not the open internet.
 - The build context is fetched fresh every run (`--depth 1` shallow

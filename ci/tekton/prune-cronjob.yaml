@@ -1,0 +1,71 @@
+# Keeps the 5 most recent PipelineRuns, deletes the rest, once a day.
+# Deleting a PipelineRun cascades (via ownerReferences) to its TaskRuns and
+# their pods, so this is the only cleanup needed - nothing prunes these on
+# its own by default in Tekton.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-pruner
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tekton-pruner
+  namespace: default
+rules:
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns"]
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-pruner
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: tekton-pruner
+    namespace: default
+roleRef:
+  kind: Role
+  name: tekton-pruner
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tekton-pipelinerun-pruner
+  namespace: default
+spec:
+  schedule: "0 3 * * *"   # daily at 03:00
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: tekton-pruner
+          restartPolicy: OnFailure
+          containers:
+            - name: prune
+              image: bitnami/kubectl:latest
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  echo "PipelineRuns before pruning:"
+                  kubectl get pipelinerun --sort-by=.metadata.creationTimestamp
+
+                  OLD=$(kubectl get pipelinerun \
+                    -o jsonpath='{range .items[*]}{.metadata.creationTimestamp}{" "}{.metadata.name}{"\n"}{end}' \
+                    | sort | head -n -5 | awk '{print $2}')
+
+                  if [ -z "$OLD" ]; then
+                    echo "Nothing to prune (5 or fewer PipelineRuns)."
+                  else
+                    echo "Deleting:"
+                    echo "$OLD"
+                    echo "$OLD" | xargs -r kubectl delete pipelinerun
+                  fi

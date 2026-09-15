@@ -19,11 +19,11 @@ end-to-end.
   (CRDs, RBAC, Deployment/Service/IngressClass), vendored rather than
   fetched from GitHub each time
 - [docs/tekton-setup.md](docs/tekton-setup.md) — Tekton Pipelines install,
-  the local-path-provisioner StorageClass it needs, the
-  git-clone/kaniko-build/deploy Tasks, and Tekton Triggers for automatic
-  builds on push (with a Gitea webhook)
+  the local-path-provisioner StorageClass it needs, a generic build+push-only
+  pipeline (no app baked in, no deploy step by design), and Tekton Triggers
+  for automatic builds on **tag** push (with a Gitea webhook)
 - [ci/tekton/](ci/tekton/) — the actual Tasks/Pipeline/PipelineRun/RBAC/
-  Triggers manifests for `hello-camel-service`'s build+deploy pipeline
+  Triggers manifests for `hello-camel-service`'s build+push pipeline
 - [docs/dashboards-setup.md](docs/dashboards-setup.md) — Tekton Dashboard
   and Kubernetes Dashboard, each on its own hostname via Traefik (not raw
   NodePorts), with a deliberately read-only login for the k8s one
@@ -43,9 +43,9 @@ end-to-end.
     — building the image with Kaniko, deploying, and verifying IngressRoute
     access
   - [docs/my-lab/tekton-setup.md](docs/my-lab/tekton-setup.md) — Tekton
-    install, the source-from-Gitea decision, the pipeline verified
-    end-to-end, and the automatic-build webhook (with the two real bugs
-    hit setting it up)
+    install, the source-from-Gitea decision, the switch to a generic
+    build+push-only pipeline triggered by tag pushes, and the real bugs
+    hit setting it up
   - [docs/my-lab/dashboards-setup.md](docs/my-lab/dashboards-setup.md) —
     both dashboards' actual hostnames, the read-only login token, and why
     hostnames instead of the app-style path convention here

@@ -1,8 +1,16 @@
-# Tekton pipeline for hello-camel-service
+# Tekton: generic build+push pipeline (used here for hello-camel-service)
 
-See [../../docs/tekton-setup.md](../../docs/tekton-setup.md) for the full
+Build+push only, deliberately — no deployment happens from here. See
+[../../docs/tekton-setup.md](../../docs/tekton-setup.md) for the full
 writeup and [../../docs/my-lab/tekton-setup.md](../../docs/my-lab/tekton-setup.md)
 for this lab's concrete setup.
+
+`pipeline.yaml` and both `Task`s are **app-agnostic** — nothing in them
+names `hello-camel-service`. This directory's `pipelinerun.yaml`,
+`trigger-template.yaml`, and `eventlistener.yaml` are the instance that
+*does* target this one app; a second Java app in the repo would get its
+own copies of those three with different `context-subdir`/`image` values,
+reusing the same `pipeline.yaml` and `Task`s unchanged.
 
 ## Prerequisites (not in this repo — created directly on the cluster)
 
@@ -31,12 +39,13 @@ for this lab's concrete setup.
 ## Apply
 
 ```bash
-kubectl apply -f rbac.yaml
 kubectl apply -f task-git-clone.yaml
 kubectl apply -f task-kaniko-build.yaml
-kubectl apply -f task-deploy.yaml
 kubectl apply -f pipeline.yaml
 ```
+
+(`rbac.yaml` and `task-deploy.yaml` are kept from an earlier iteration
+that included deployment — not applied/used anymore, see "Files" below.)
 
 ## Run manually
 
@@ -45,39 +54,78 @@ kubectl create -f pipelinerun.yaml   # generateName - safe to re-run
 kubectl get pipelinerun -w
 ```
 
-Bump `image-tag` in `pipelinerun.yaml` (or override at the command line
-with `kubectl create -f pipelinerun.yaml --dry-run=client -o yaml | ...` /
-just edit the file) for a new build.
+`pipelinerun.yaml` supplies the app-specific params (`context-subdir`,
+`image`, etc.) that the generic `Pipeline` has no defaults for. Edit the
+`image` value (or the whole file) for a different version.
 
-## Automatic builds on push to `main`
+## Automatic builds on tag push
 
 ```bash
-kubectl apply -f trigger-rbac.yaml
 kubectl apply -f trigger-binding.yaml
 kubectl apply -f trigger-template.yaml
 kubectl apply -f eventlistener.yaml
 kubectl apply -f webhook-ingressroute.yaml
 ```
 
-Then configure a push webhook on the git server pointing at the
+(`trigger-rbac.yaml`'s `el-webhook` ServiceAccount is a prerequisite for
+the `EventListener` itself, still in active use — unlike `rbac.yaml`.)
+
+Then configure a **tag** push webhook on the git server pointing at the
 `IngressRoute`'s hostname, with the same secret token as the
-`gitea-webhook-secret` `Secret`. See
-[../../docs/tekton-setup.md](../../docs/tekton-setup.md) for the two real
+`gitea-webhook-secret` `Secret`, and **no branch filter** (or `*`) — a
+branch-scoped filter silently blocks tag pushes entirely. Cut a release
+with:
+
+```bash
+git tag 1.2.0
+git push <remote> 1.2.0
+```
+
+See [../../docs/tekton-setup.md](../../docs/tekton-setup.md) for the real
 gotchas hit here (an SSRF-protection setting blocking the webhook
-delivery, and where interceptor-computed values actually live in the
-event payload).
+delivery, where interceptor-computed values actually live in the event
+payload, and why the Gitea webhook's branch filter has to stay wide open).
+
+## Cleaning up old PipelineRuns
+
+Nothing in Tekton prunes completed `PipelineRun`/`TaskRun` objects (or
+their pods) on its own — left alone, they accumulate forever.
+`prune-cronjob.yaml` runs daily, keeping only the 5 most recent
+`PipelineRun`s and deleting the rest; deleting a `PipelineRun` cascades
+(via `ownerReferences`) to its `TaskRun`s and their pods automatically:
+
+```bash
+kubectl apply -f prune-cronjob.yaml
+```
+
+Test it on demand rather than waiting for the schedule:
+
+```bash
+kubectl create job --from=cronjob/tekton-pipelinerun-pruner prune-test-1
+kubectl logs job/prune-test-1
+kubectl delete job prune-test-1
+```
 
 ## Files
 
-- `rbac.yaml` — `tekton-deployer` ServiceAccount/Role/RoleBinding, used
-  only by the `deploy` Task
-- `task-git-clone.yaml`, `task-kaniko-build.yaml`, `task-deploy.yaml` —
-  the three build steps, self-written rather than pulled from Tekton Hub
-- `pipeline.yaml` — chains the three Tasks with a shared PVC workspace
-- `pipelinerun.yaml` — manual trigger template
+**In active use:**
+- `task-git-clone.yaml`, `task-kaniko-build.yaml` — the two build steps,
+  fully generic, self-written rather than pulled from Tekton Hub
+- `pipeline.yaml` — generic `java-app-build-push`: chains the two Tasks
+  with a shared PVC workspace, build+push only
+- `pipelinerun.yaml` — manual trigger, targeting `hello-camel-service`
+  specifically
 - `trigger-rbac.yaml` — `el-webhook` ServiceAccount for the `EventListener`
 - `trigger-binding.yaml`, `trigger-template.yaml`, `eventlistener.yaml` —
-  the automatic-trigger pipeline: extract fields from the push payload,
-  stamp out a `PipelineRun`, filter which events fire it
+  the tag-push auto-trigger for `hello-camel-service`: extract the pushed
+  tag name, stamp out a `PipelineRun` using it as the image version, only
+  fire on `refs/tags/*` pushes
 - `webhook-ingressroute.yaml` — routes the `EventListener`'s Service to
   its own hostname
+- `prune-cronjob.yaml` — `tekton-pruner` ServiceAccount/Role/RoleBinding +
+  a daily `CronJob` keeping only the last 5 `PipelineRun`s
+
+**Kept but currently unused** (from before deployment was removed from
+this pipeline):
+- `rbac.yaml` — `tekton-deployer` ServiceAccount/Role/RoleBinding
+- `task-deploy.yaml` — `kubectl set image` + rollout wait

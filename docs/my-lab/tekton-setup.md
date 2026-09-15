@@ -1,6 +1,11 @@
-# My Lab: Tekton build + deploy pipeline
+# My Lab: Tekton build + push pipeline
 
 Concrete record following [../tekton-setup.md](../tekton-setup.md).
+
+**Current state: build+push only, triggered by tag pushes.** The pipeline
+originally also deployed (see the history below) — deliberately removed;
+Tekton's job here stops at pushing an image. See "Switched to build+push
+only, tag-triggered" further down for what changed and why.
 
 ## Source: pushed to Gitea, not GitHub
 
@@ -160,17 +165,108 @@ shutdown signal. Fixed by widening both probes in
 margin instead of the tightest number that happened to work once, when the
 node was quieter.
 
+Later confirmed with an actual `git push` (not just the test-delivery
+endpoint) — pushing the commit documenting all of this triggered a real
+`PipelineRun` with zero manual steps, which built, pushed, and deployed
+that exact commit's image (tag matched the push's own short SHA), and the
+widened probes held up cleanly (no crash loop, `0` restarts).
+
+## Switched to build+push only, tag-triggered
+
+The pipeline above (`hello-camel-service-build-deploy`) built, pushed,
+*and* deployed on every push to `main`. Changed to match how this lab
+actually wants to work: **Tekton builds and pushes only; deployment is a
+separate concern** (Argo CD eventually, manual `kubectl` for now), and
+**a build only happens when a tag is pushed** — not on every ordinary
+commit — with the image version coming from the tag itself.
+
+- **`Pipeline` renamed and genericized**: `hello-camel-service-build-deploy`
+  → `java-app-build-push`. Dropped the `deploy` `Task` from the chain
+  entirely (the `Task` definition still exists in
+  [../../ci/tekton/task-deploy.yaml](../../ci/tekton/task-deploy.yaml),
+  just unused). Lifted `context-subdir` and the image's repo path out of
+  the `build-and-push` step's hardcoded values into `Pipeline`-level
+  params with no default — nothing in `pipeline.yaml` or the two `Task`s
+  names `hello-camel-service` anymore. A second Java app in this repo
+  reuses the exact same `Pipeline`/`Task`s with different param values.
+- **Trigger switched from branch pushes to tag pushes**: the `cel`
+  filter changed from `body.ref == 'refs/heads/main'` to
+  `body.ref.startsWith('refs/tags/')`, and the overlay that used to
+  truncate the commit SHA now extracts the tag name instead
+  (`body.ref.split('/')[2]`) — renamed `TriggerBinding`/`TriggerTemplate`
+  to `gitea-tag-push-binding`/`hello-camel-service-tag-trigger-template`
+  to match.
+- **Gitea webhook's `branch_filter` changed from `main` to `*`** — a
+  `branch_filter` scoped to a branch name silently swallows tag pushes
+  entirely (they aren't on any branch), so it has to be wide open and let
+  the `cel` interceptor do the actual filtering instead.
+
+### Verified: real tag push, build-only
+
+```bash
+git tag 1.1.1
+git push gitea 1.1.1
+```
+
+Produced `hello-camel-service-build-6ds65` — note the new naming
+(`-build-`, not `-auto-`), confirming the updated `TriggerTemplate` was in
+effect. Params on the resulting `PipelineRun` confirmed the tag flowed
+through correctly:
+
+```json
+[{"name":"git-revision","value":"1.1.1"},
+ {"name":"image","value":"10.137.160.1:3000/rpamu/hello-camel-service:1.1.1"}]
+```
+
+Only two `TaskRun`s existed (`fetch-source`, `build-and-push`) — no
+`deploy`. Both succeeded, image `1.1.1` confirmed pushed to the registry,
+and — the actual point of this change — the live `Deployment` still showed
+the *previous* image the whole time:
+
+```bash
+kubectl get deployment hello-camel-service -o jsonpath='{.spec.template.spec.containers[0].image}'
+# -> 10.137.160.1:3000/rpamu/hello-camel-service:77daf51 (unchanged)
+```
+
+Test tag and its build (`1.1.1`) were cleaned up afterward — a throwaway
+verification tag, not a real release. Gitea delivered the webhook a second
+time (delayed/duplicate delivery, arriving after the tag was already
+deleted), producing one extra failed `PipelineRun` — `git clone` correctly
+failed since `1.1.1` no longer existed by then. Not a bug in this setup,
+just an artifact of deleting the test tag quickly after pushing it;
+cleaned up manually rather than waiting for the daily pruner.
+
+## Cleaning up old PipelineRuns
+
+With automatic triggers now producing a new `PipelineRun` on every push,
+they'd accumulate forever without something pruning them (see
+[../tekton-setup.md](../tekton-setup.md)). Installed a daily `CronJob`
+(`ci/tekton/prune-cronjob.yaml`) keeping the 5 most recent, with its own
+narrowly-scoped `tekton-pruner` ServiceAccount (`get`/`list`/`delete` on
+`pipelineruns` only — not reusing the `deploy` Task's `ServiceAccount`).
+
+Tested on demand rather than waiting for the 03:00 schedule:
+```bash
+kubectl create job --from=cronjob/tekton-pipelinerun-pruner prune-test-1
+kubectl logs job/prune-test-1
+# -> "Nothing to prune (5 or fewer PipelineRuns)." — correct, only 1 existed
+kubectl delete job prune-test-1
+```
+
 ## Status
 
 - [x] Tekton Pipelines installed and healthy
 - [x] local-path-provisioner installed, set as default StorageClass
 - [x] Repo pushed to Gitea, used as the pipeline's git source
-- [x] git-clone / kaniko-build / deploy Tasks written and working
-- [x] Pipeline chains all three, verified end-to-end from a clean run
-- [x] Tekton Triggers + Gitea webhook installed, verified end-to-end via
-      a test delivery — automatic `PipelineRun` on push to `main`
+- [x] git-clone / kaniko-build Tasks written and working, fully generic
+      (no app name baked in)
+- [x] Pipeline (`java-app-build-push`) chains build+push only — deploy
+      removed by design
+- [x] Tekton Triggers + Gitea webhook installed, switched to tag-push
+      triggering, verified end-to-end with a real tag push
 - [x] Tekton Dashboard installed, reachable at `tekton.staging.test` (see
       [dashboards-setup.md](dashboards-setup.md))
 - [x] Probe timings widened to tolerate node-wide resource contention
-- [ ] Argo CD — deploy step is still a direct `kubectl set image`, not a
-      GitOps-reconciled deployment
+- [x] Daily pruning CronJob for old PipelineRuns, keeping the last 5
+- [ ] Argo CD — nothing currently deploys a newly-pushed image
+      automatically; that's the deliberate next gap to fill

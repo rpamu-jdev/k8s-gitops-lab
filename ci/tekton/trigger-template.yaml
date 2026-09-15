@@ -1,30 +1,37 @@
-# Spawns the same Pipeline used for manual runs, tagging the image with
-# the pushed commit's short SHA (so every auto-build produces a distinct,
-# traceable image tag - not a reused fixed version like the manual runs).
+# Spawns a build+push-only PipelineRun (java-app-build-push - see
+# pipeline.yaml, which has no app baked into it) whenever a tag is pushed.
+# The image tag is the git tag itself, e.g. pushing tag "1.2.0" builds and
+# pushes .../hello-camel-service:1.2.0 - not the commit SHA. This
+# TriggerTemplate instance is specific to hello-camel-service (context-
+# subdir and the image's repo path are hardcoded below); a second Java app
+# in this repo would get its own Trigger/TriggerTemplate pair reusing the
+# same generic Pipeline with different values for those two fields.
 apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerTemplate
 metadata:
-  name: hello-camel-service-trigger-template
+  name: hello-camel-service-tag-trigger-template
   namespace: default
 spec:
   params:
     - name: git-repo-url
-    - name: short-sha
+    - name: version
   resourcetemplates:
     - apiVersion: tekton.dev/v1
       kind: PipelineRun
       metadata:
-        generateName: hello-camel-service-auto-
+        generateName: hello-camel-service-build-
       spec:
         pipelineRef:
-          name: hello-camel-service-build-deploy
+          name: java-app-build-push
         params:
           - name: git-url
             value: $(tt.params.git-repo-url)
           - name: git-revision
-            value: main
-          - name: image-tag
-            value: $(tt.params.short-sha)
+            value: $(tt.params.version)
+          - name: context-subdir
+            value: apps/java-app
+          - name: image
+            value: 10.137.160.1:3000/rpamu/hello-camel-service:$(tt.params.version)
         workspaces:
           - name: source
             volumeClaimTemplate:
@@ -34,6 +41,3 @@ spec:
                 resources:
                   requests:
                     storage: 1Gi
-        taskRunSpecs:
-          - pipelineTaskName: deploy
-            serviceAccountName: tekton-deployer

@@ -52,10 +52,13 @@ docker run -p 8080:8080 hello-camel-service:local
 
 In the lab, this is built and pushed to the local Gitea registry
 (`10.137.160.1:3000/rpamu/hello-camel-service`) — first done manually via a
-one-off Kaniko run, now automated by a Tekton pipeline
-(`kubectl create -f ../../ci/tekton/pipelinerun.yaml`) that clones from
-Gitea, builds+pushes with Kaniko, and rolls the Deployment to the new
-image. See [../../docs/tekton-setup.md](../../docs/tekton-setup.md).
+one-off Kaniko run, now automated by a Tekton pipeline that clones from
+Gitea and builds+pushes with Kaniko whenever a **tag** is pushed, using the
+tag name as the image version (`git tag 1.2.0 && git push gitea 1.2.0`
+builds and pushes `...hello-camel-service:1.2.0`). Deliberately
+**build+push only** — Tekton doesn't deploy anything; run
+`kubectl create -f ../../ci/tekton/pipelinerun.yaml` for a one-off manual
+build instead. See [../../docs/tekton-setup.md](../../docs/tekton-setup.md).
 
 ## Deploy to Kubernetes
 
