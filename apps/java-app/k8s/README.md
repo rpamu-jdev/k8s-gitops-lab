@@ -1,9 +1,18 @@
 # Kubernetes manifests for hello-camel-service
 
-Plain manifests (no Helm/Kustomize yet — Argo CD will likely want these
-templated or organized differently once that's set up). Deployed into the
-**`default`** namespace (no dedicated namespace for this app). Apply in
-order:
+Plain manifests (no Helm/Kustomize). Deployed into the **`default`**
+namespace (no dedicated namespace for this app).
+
+**Deployed by Argo CD, not `kubectl apply`** — an `Application` (see
+[../../../ci/argocd/](../../../ci/argocd/)) watches this directory and
+syncs any committed change to the cluster automatically
+(`prune`+`selfHeal` both on). Edit a file here, commit, push — that's the
+whole deploy step. See
+[../../../docs/argocd-setup.md](../../../docs/argocd-setup.md).
+
+Applying manually still works for a one-off/offline test, same order as
+before, but Argo CD's `selfHeal` will revert any drift it introduces
+against what's actually committed:
 
 ```bash
 kubectl apply -f configmap.yaml
@@ -36,12 +45,16 @@ kubectl apply -f ingressroute.yaml
 ## Rolling out a config change
 
 ```bash
-kubectl edit configmap hello-camel-service-config
+# edit configmap.yaml, then:
+git commit -am "..." && git push gitea main
 kubectl rollout restart deployment hello-camel-service
 ```
 
-ConfigMap changes aren't picked up by already-running pods automatically —
-a rollout restart is needed to re-read the env vars at container start.
+Argo CD syncs the `ConfigMap` object itself automatically, but a
+`kubectl rollout restart` is still needed afterward — ConfigMap changes
+aren't picked up by already-running pods automatically; a restart is
+needed to re-read the env vars at container start. (Verified in
+[../../../docs/my-lab/argocd-setup.md](../../../docs/my-lab/argocd-setup.md).)
 
 ## Verify
 

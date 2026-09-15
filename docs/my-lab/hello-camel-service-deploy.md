@@ -171,5 +171,7 @@ curl -H "Host: api.staging.test" http://10.137.160.148/sample/api/hello
 - [x] Build+push automated via Tekton, triggered by tag pushes — see
       [tekton-setup.md](tekton-setup.md). Deliberately build+push only:
       Tekton does not deploy anything here
-- [ ] Deploy is still fully manual (`kubectl apply`/`kubectl set image`)
-      — Argo CD is the intended eventual answer, not yet set up
+- [x] Deploy automated via Argo CD instead of manual `kubectl apply`/
+      `kubectl set image` — see [argocd-setup.md](argocd-setup.md). A
+      change to anything under [k8s/](../../apps/java-app/k8s/) now reaches
+      the cluster via `git push`, auto-synced (`prune`+`selfHeal`)

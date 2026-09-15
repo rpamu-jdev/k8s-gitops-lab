@@ -63,10 +63,16 @@ build instead. See [../../docs/tekton-setup.md](../../docs/tekton-setup.md).
 ## Deploy to Kubernetes
 
 See [k8s/](k8s/) for the manifests (ConfigMap, Deployment, Service,
-IngressRoute) and [k8s/README.md](k8s/README.md) for how to apply them and
-roll out config changes. The `IngressRoute` requires the Traefik controller
-(installed as a standard part of cluster setup — see
-[../../docs/k8s-setup.md](../../docs/k8s-setup.md)).
+IngressRoute) and [k8s/README.md](k8s/README.md) for what each does.
+Deploys via **Argo CD**, not `kubectl apply` — an `Application` (see
+[../../ci/argocd/](../../ci/argocd/)) watches this directory and syncs any
+committed change straight to the cluster (`prune`+`selfHeal` both on, so
+deleting a manifest here deletes the object too, and a manual
+`kubectl edit` against a tracked resource gets reverted). The
+`IngressRoute` requires the Traefik controller (installed as a standard
+part of cluster setup — see [../../docs/k8s-setup.md](../../docs/k8s-setup.md)).
+See [../../docs/argocd-setup.md](../../docs/argocd-setup.md) for the full
+Argo CD writeup.
 
 In the cluster, this app is reachable under `api.staging.test/sample/*` — a
 shared host used across all apps in this lab, with each app given its own

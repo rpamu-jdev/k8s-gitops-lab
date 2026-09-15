@@ -29,8 +29,15 @@ end-to-end.
   NodePorts), with a deliberately read-only login for the k8s one
 - [infra/dashboards/](infra/dashboards/) — the RBAC and IngressRoute
   manifests for both dashboards
-- `docs/argocd-setup.md` — Argo CD install and app-of-apps config (coming
-  soon)
+- [docs/argocd-setup.md](docs/argocd-setup.md) — Argo CD install, serving
+  plain HTTP behind Traefik, Gitea repo credentials, and the generic
+  `Application` shape (one per app, `syncPolicy.automated` with
+  `prune`+`selfHeal`)
+- [infra/argocd/](infra/argocd/) — Argo CD's own routing (`IngressRoute`
+  for its UI at `argocd.staging.test`)
+- [ci/argocd/](ci/argocd/) — the `Application` manifest that deploys
+  `hello-camel-service` from [apps/java-app/k8s/](apps/java-app/k8s/) —
+  git push, not `kubectl apply`, is how this app gets deployed now
 - [docs/my-lab/](docs/my-lab/) — this lab's actual concrete setup (real IPs,
   hostnames, MACs, file layout, gotchas hit, current status), one file per
   topic mirroring `docs/`
@@ -49,6 +56,9 @@ end-to-end.
   - [docs/my-lab/dashboards-setup.md](docs/my-lab/dashboards-setup.md) —
     both dashboards' actual hostnames, the read-only login token, and why
     hostnames instead of the app-style path convention here
+  - [docs/my-lab/argocd-setup.md](docs/my-lab/argocd-setup.md) — Argo CD
+    install, the `hello-camel-service` `Application`, and a verified
+    end-to-end GitOps test (git push → auto-sync → live cluster change)
 - [apps/java-app/](apps/java-app/) — `hello-camel-service`: Java 17 + Spring
   Boot 4 + Apache Camel 4 REST API (`/sample/api/hello`, `/sample/api/version`),
   configured via `GREETING_PREFIX`/`APP_ENVIRONMENT` env vars, reachable
@@ -63,14 +73,14 @@ of a plain `Ingress`) rather than a new host. Each app owns its full
 external path itself (`hello-camel-service`'s base path is `/sample/api`)
 rather than relying on a path-stripping `Middleware` at the ingress layer.
 
-The two admin dashboards and the Tekton webhook endpoint are the
-exception: each gets its **own hostname** (`tekton.staging.test`,
-`dashboard.staging.test`, `webhook.staging.test`) instead of a path under
-`api.staging.test`, since none of them are apps built with a configurable
-base path — a path prefix would break the dashboards' asset loading, and
-the webhook endpoint is an operational integration point rather than a
-backend API. Same Traefik entrypoint, same "DNS instead of a raw port
-number" goal either way.
+The admin dashboards, the Tekton webhook endpoint, and the Argo CD UI are
+the exception: each gets its **own hostname** (`tekton.staging.test`,
+`dashboard.staging.test`, `webhook.staging.test`, `argocd.staging.test`)
+instead of a path under `api.staging.test`, since none of them are apps
+built with a configurable base path — a path prefix would break their
+asset loading, and the webhook endpoint is an operational integration
+point rather than a backend API. Same Traefik entrypoint, same "DNS
+instead of a raw port number" goal either way.
 
 ## Topology
 
