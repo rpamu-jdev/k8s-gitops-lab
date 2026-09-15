@@ -1,11 +1,11 @@
 # Demonstrates the env-var-driven config (GREETING_PREFIX, APP_ENVIRONMENT)
-# from application.yml. Edit these and re-apply + roll the deployment to
-# see them take effect without a rebuild.
+# from application.yml. Now managed by Argo CD (see ../../../ci/argocd/) —
+# edit and push to git; no manual kubectl apply needed, Argo CD syncs it.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: hello-camel-service-config
   namespace: default
 data:
-  GREETING_PREFIX: "Hello"
+  GREETING_PREFIX: "Namaste"
   APP_ENVIRONMENT: "k8s-lab"
